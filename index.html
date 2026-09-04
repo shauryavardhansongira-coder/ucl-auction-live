@@ -9,11 +9,13 @@
   :root {
     --bg:#0f1216; --panel:#161b22; --line:#2a323d; --text:#e6edf3; --muted:#9aa7b4;
     --accent:#4c8dff; --row2:#151a21; --hover:#1d2530; --hd:#1b2230; --err:#d9534f;
+    --ok:#3fb950; --warn:#c8922a;
   }
   @media (prefers-color-scheme: light) {
     :root {
       --bg:#f6f7f9; --panel:#ffffff; --line:#d9dee5; --text:#1a1f26; --muted:#5b6672;
       --accent:#1f6feb; --row2:#f2f4f8; --hover:#e9eef6; --hd:#eef1f5; --err:#c9302c;
+      --ok:#1a7f37; --warn:#9a6700;
     }
   }
   html, body { margin:0; height:100%; }
@@ -56,6 +58,70 @@
   }
   .mf-panel label:hover { background:var(--hover); }
 
+  /* View segmented control */
+  .viewseg { display:flex; }
+  .viewseg button {
+    padding:6px 9px; font-size:12px; background:var(--bg); color:var(--muted);
+    border:1px solid var(--line); border-left-width:0; cursor:pointer;
+  }
+  .viewseg button:first-child { border-left-width:1px; border-radius:6px 0 0 6px; }
+  .viewseg button:last-child { border-radius:0 6px 6px 0; }
+  .viewseg button.on { color:var(--text); background:var(--hd); font-weight:700; }
+
+  /* Wallet bar — always visible, glanceable from across a table */
+  .walletbar {
+    display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:6px;
+    padding:6px 8px; background:var(--panel); border-bottom:1px solid var(--line);
+  }
+  .walletbar:focus { outline:none; }
+  .mgr {
+    position:relative; display:flex; flex-direction:column; gap:1px;
+    padding:4px 8px 5px; border:1px solid var(--line); border-radius:6px;
+    background:var(--bg); min-width:0;
+  }
+  .mgr-key {
+    position:absolute; top:3px; right:5px; font-size:10px; font-weight:700;
+    color:var(--muted); border:1px solid var(--line); border-radius:3px; padding:0 3px; line-height:1.35;
+  }
+  .mgr-name {
+    font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+    color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:16px;
+  }
+  .mgr-rem { font-size:21px; font-weight:800; font-variant-numeric:tabular-nums; line-height:1.1; }
+  .mgr-slots { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .mgr.full .mgr-slots { color:var(--ok); font-weight:700; }
+  .walletbar.pick .mgr { cursor:pointer; }
+  .walletbar.pick .mgr:hover { border-color:var(--accent); }
+  .mgr.picked { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+  .mgr.blocked { opacity:.45; }
+  .mgr.blocked .mgr-rem { color:var(--err); }
+
+  /* Assignment bar */
+  .assignbar {
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:6px 8px; background:var(--panel); border-bottom:1px solid var(--line); min-height:34px;
+  }
+  .assignbar .hint { color:var(--muted); }
+  .assignbar:not(.sel) .selwrap { display:none; }
+  .assignbar.sel .idlehint { display:none; }
+  .selwrap { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .assign-player { display:flex; align-items:center; gap:8px; font-weight:600; }
+  .assign-player .meta { color:var(--muted); font-weight:400; }
+  .price-label { color:var(--muted); }
+  input.price {
+    width:74px; margin-left:4px; padding:4px 8px; font-size:14px; font-variant-numeric:tabular-nums;
+    background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text);
+  }
+  input.price:disabled { opacity:.6; }
+  .assignbar button {
+    padding:4px 9px; font-size:12px; background:var(--bg); border:1px solid var(--line);
+    border-radius:6px; color:var(--text); cursor:pointer;
+  }
+  .assignbar button.primary { border-color:var(--accent); color:var(--accent); font-weight:700; }
+  .assignbar button[disabled] { opacity:.4; cursor:default; }
+  .assign-err { color:var(--err); font-weight:600; }
+  .assign-err:empty { display:none; }
+
   /* Table */
   .main { flex:1; overflow:auto; }
   table { width:100%; border-collapse:collapse; table-layout:fixed; }
@@ -69,8 +135,13 @@
     padding:3px 8px; border-bottom:1px solid var(--line);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
+  tbody tr.r { cursor:pointer; }
   tbody tr.r:hover { background:var(--hover); }
   tbody tr.r.alt { background:var(--row2); }
+  tbody tr.r.hi td { background:var(--accent); color:#fff; }
+  tbody tr.r.hi td .nm, tbody tr.r.hi td .meta, tbody tr.r.hi td .mark { color:#fff; }
+  tbody tr.r.soldrow { cursor:default; }
+  tbody tr.r.soldrow td { opacity:.5; }
   tr.grp td {
     position:sticky; top:var(--th-h, 28px); z-index:4;
     background:var(--panel); color:var(--text);
@@ -90,6 +161,12 @@
     background:var(--bg); border:1px solid var(--line);
     font-size:9px; font-weight:700; color:var(--muted);
   }
+  .nmwrap { display:inline-flex; align-items:baseline; gap:6px; max-width:100%; }
+  .nmwrap .nm { overflow:hidden; text-overflow:ellipsis; }
+  .mark { font-size:10px; font-weight:700; color:var(--muted); white-space:nowrap; }
+  .mark:empty { display:none; }
+  .mark.unsold { color:var(--warn); }
+  .mark.sold { color:var(--accent); }
   .club { display:flex; align-items:center; gap:6px; overflow:hidden; }
   .cr { width:16px; height:16px; object-fit:contain; flex:none; }
   .cr-txt { font-size:10px; font-weight:700; color:var(--muted); flex:none; min-width:16px; }
@@ -118,14 +195,15 @@
 "use strict";
 
 /* ============================================================
-   CONFIG — auction values filled in later. Nothing below is
-   hardcoded against these; the list works with placeholders.
+   CONFIG — league rules live here. Logic below reads from this
+   object only; nothing about "four managers" or the numbers is
+   hardcoded, so a different league = edit this block alone.
    ============================================================ */
 const CONFIG = {
-  managers: ["", "", "", ""],
-  startingBudget: 0,
-  squadSize: 0,
-  minBid: 0,
+  managers: ["Name1", "Name2", "Name3", "Name4"],
+  startingBudget: 200,
+  squadSize: 15,
+  minBid: 1,
   positionOrder: ["GK", "DEF", "MID", "FWD"],
   positionLimits: { GK: [0,0], DEF: [0,0], MID: [0,0], FWD: [0,0] },
   maxPerClub: 0,
@@ -162,6 +240,7 @@ function hueOf(s) {
 function isNum(v) { return typeof v === "number" && !isNaN(v); }
 function fmtInt(v) { return isNum(v) ? String(v) : "·"; }
 function fmtVal(v) { return isNum(v) ? v.toFixed(1) : "·"; }
+function fmtMoney(v) { return isNum(v) ? String(v) : "·"; }
 
 const app = document.getElementById("app");
 
@@ -244,7 +323,32 @@ function buildUI(ALL) {
     p._n = norm(p.name || "");
   });
 
-  const AVAIL = ALL.filter(p => p.status === "available").length;
+  /* ---- managers: an array so league size = CONFIG only ---- */
+  const MANAGERS = CONFIG.managers.map((name, i) => ({
+    id: i,
+    name: (name && String(name).trim()) || ("Manager " + (i + 1))
+  }));
+
+  function walletOf(m) {
+    let spent = 0, slots = 0;
+    for (const p of ALL) {
+      if (p.status === "sold" && p.owner === m.id) {
+        spent += Number(p.price) || 0;
+        slots++;
+      }
+    }
+    return { spent, slots, remaining: CONFIG.startingBudget - spent };
+  }
+
+  /* ---- selection / assignment state ---- */
+  let SELECTED = null;          // the player being assigned, or null
+  let phase = "browse";         // "browse" | "price" | "manager"
+  let pendingManager = null;    // index into MANAGERS during "manager" phase
+  let pendingPrice = null;      // validated price, set when leaving "price"
+  let view = "available";       // "available" | "unsold" | "all"
+  let viewList = [];            // players currently shown, in row order
+  let hi = -1;                  // keyboard highlight index into viewList
+  let hiRow = null;             // <tr> currently carrying .hi
 
   /* positions: CONFIG.positionOrder drives display order only;
      anything present in the data but not listed is appended. */
@@ -338,10 +442,17 @@ function buildUI(ALL) {
   }
 
   function nameCell(p) {
-    const s = document.createElement("span");
-    s.textContent = p.name;
-    if (p.fullName && p.fullName !== p.name) s.title = p.fullName;
-    return s;
+    const wrap = document.createElement("span");
+    wrap.className = "nmwrap";
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = p.name;
+    if (p.fullName && p.fullName !== p.name) nm.title = p.fullName;
+    const mark = document.createElement("span");
+    mark.className = "mark";
+    p._mark = mark;                         // updated per render to show sold/unsold
+    wrap.append(nm, mark);
+    return wrap;
   }
 
   function clubCell(p) {
@@ -397,6 +508,7 @@ function buildUI(ALL) {
       else td.textContent = out;
       tr.appendChild(td);
     }
+    tr.addEventListener("click", () => selectPlayer(p));
     p._row = tr;
   }
 
@@ -425,10 +537,101 @@ function buildUI(ALL) {
     sortSel.appendChild(o);
   }
 
+  const viewSeg = document.createElement("div");
+  viewSeg.className = "viewseg";
+  [["available", "Available"], ["unsold", "Unsold"], ["all", "All"]].forEach(([v, label]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.dataset.v = v;
+    if (v === view) b.className = "on";
+    b.addEventListener("click", () => {
+      view = v;
+      [...viewSeg.children].forEach(c => c.classList.toggle("on", c.dataset.v === v));
+      refresh();
+    });
+    viewSeg.appendChild(b);
+  });
+
   const count = document.createElement("span");
   count.className = "count";
 
-  toolbar.append(search, clubFilter.el, posFilter.el, sortSel, count);
+  toolbar.append(search, clubFilter.el, posFilter.el, sortSel, viewSeg, count);
+
+  /* ---------- wallet bar ---------- */
+
+  const walletBar = document.createElement("div");
+  walletBar.className = "walletbar";
+  walletBar.tabIndex = -1;                  // focus target while picking a manager
+  const mgrCards = MANAGERS.map((m, i) => {
+    const c = document.createElement("div");
+    c.className = "mgr";
+    const key = document.createElement("span");
+    key.className = "mgr-key";
+    key.textContent = i < 9 ? String(i + 1) : "·";
+    const name = document.createElement("span");
+    name.className = "mgr-name";
+    name.textContent = m.name;
+    const rem = document.createElement("span");
+    rem.className = "mgr-rem";
+    const slots = document.createElement("span");
+    slots.className = "mgr-slots";
+    c.append(key, name, rem, slots);
+    c._rem = rem;
+    c._slots = slots;
+    c.addEventListener("click", () => onCardClick(i));
+    return c;
+  });
+  walletBar.append(...mgrCards);
+
+  /* ---------- assignment bar ---------- */
+
+  const assignBar = document.createElement("div");
+  assignBar.className = "assignbar";
+  assignBar.dataset.phase = "browse";
+
+  const idleHint = document.createElement("span");
+  idleHint.className = "hint idlehint";
+  idleHint.textContent = "Select a player  ·  ↑↓ move  ·  Enter pick  ·  U unsold  ·  Esc cancel";
+
+  const playerBox = document.createElement("span");
+  playerBox.className = "assign-player";
+
+  const priceLabel = document.createElement("label");
+  priceLabel.className = "price-label";
+  priceLabel.textContent = "Price";
+  const priceInput = document.createElement("input");
+  priceInput.type = "text";
+  priceInput.className = "price";
+  priceInput.inputMode = "decimal";
+  priceInput.autocomplete = "off";
+  priceInput.placeholder = "≥" + CONFIG.minBid;
+  priceLabel.appendChild(priceInput);
+
+  const stepHint = document.createElement("span");
+  stepHint.className = "hint step";
+
+  const confirmBtn = document.createElement("button");
+  confirmBtn.type = "button";
+  confirmBtn.className = "primary";
+  confirmBtn.textContent = "Confirm ⏎";
+  const unsoldBtn = document.createElement("button");
+  unsoldBtn.type = "button";
+  unsoldBtn.textContent = "Unsold (U)";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "Cancel (Esc)";
+
+  const assignErr = document.createElement("span");
+  assignErr.className = "assign-err";
+  assignErr.setAttribute("role", "status");
+  assignErr.setAttribute("aria-live", "polite");
+
+  const selWrap = document.createElement("span");
+  selWrap.className = "selwrap";
+  selWrap.append(playerBox, priceLabel, stepHint, confirmBtn, unsoldBtn, cancelBtn);
+
+  assignBar.append(idleHint, selWrap, assignErr);
 
   /* ---------- table shell ---------- */
 
@@ -460,20 +663,27 @@ function buildUI(ALL) {
   table.appendChild(tbody);
   main.appendChild(table);
 
-  app.replaceChildren(toolbar, main);
+  app.replaceChildren(toolbar, walletBar, assignBar, main);
 
   // sticky group headers sit just below the real header row
   document.documentElement.style.setProperty("--th-h", thead.offsetHeight + "px");
 
-  /* ---------- render ---------- */
+  /* ---------- render (list) ---------- */
+
+  const VIEW_PRED = {
+    available: p => p.status === "available",
+    unsold:    p => p.status === "unsold",
+    all:       () => true
+  };
 
   function render() {
     const q = norm(search.value.trim());
     const cs = clubFilter.selected;
     const ps = posFilter.selected;
+    const inView = VIEW_PRED[view];
 
     const list = ALL.filter(p =>
-      p.status === "available" &&
+      inView(p) &&
       (cs.size === 0 || cs.has(p.club)) &&
       (ps.size === 0 || ps.has(p.position)) &&
       (q === "" || p._s.includes(q))
@@ -515,6 +725,22 @@ function buildUI(ALL) {
         gtr.appendChild(gtd);
         frag.appendChild(gtr);
       }
+      // status marker inside the name cell
+      const mk = p._mark;
+      if (mk) {
+        if (p.status === "sold") {
+          const mgr = MANAGERS[p.owner];
+          mk.textContent = "→ " + (mgr ? mgr.name : "?") + " " + fmtMoney(p.price);
+          mk.className = "mark sold";
+        } else if (p.status === "unsold") {
+          mk.textContent = "UNSOLD";
+          mk.className = "mark unsold";
+        } else {
+          mk.textContent = "";
+          mk.className = "mark";
+        }
+      }
+      p._row.classList.toggle("soldrow", p.status === "sold");
       p._row.classList.toggle("alt", alt);
       alt = !alt;
       frag.appendChild(p._row);
@@ -527,22 +753,235 @@ function buildUI(ALL) {
       const td = document.createElement("td");
       td.className = "empty";
       td.colSpan = NCOL;
-      td.textContent = q || cs.size || ps.size ? "No players match the current filters." : "No available players.";
+      td.textContent = q || cs.size || ps.size
+        ? "No players match the current filters."
+        : (view === "unsold" ? "No unsold players yet." : "Nothing to show.");
       tr.appendChild(td);
       tbody.appendChild(tr);
     }
 
-    count.textContent = `${list.length.toLocaleString()} / ${AVAIL.toLocaleString()} available`;
+    viewList = list;
+    hi = viewList.length ? 0 : -1;
+    applyHi();
+
+    let nAvail = 0, nSold = 0, nUnsold = 0;
+    for (const p of ALL) {
+      if (p.status === "available") nAvail++;
+      else if (p.status === "sold") nSold++;
+      else if (p.status === "unsold") nUnsold++;
+    }
+    count.textContent = `${list.length} shown · ${nAvail} avail · ${nSold} sold · ${nUnsold} unsold`;
+
+    renderWallets();
   }
+
+  function applyHi() {
+    if (hiRow) hiRow.classList.remove("hi");
+    hiRow = viewList[hi] ? viewList[hi]._row : null;
+    if (hiRow) {
+      hiRow.classList.add("hi");
+      hiRow.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function moveHi(d) {
+    if (!viewList.length) return;
+    hi = Math.max(0, Math.min(viewList.length - 1, hi + d));
+    applyHi();
+  }
+
+  /* ---------- wallets ---------- */
+
+  function renderWallets() {
+    const picking = SELECTED && (phase === "price" || phase === "manager");
+    walletBar.classList.toggle("pick", !!picking);
+    MANAGERS.forEach((m, i) => {
+      const w = walletOf(m);
+      const c = mgrCards[i];
+      c._rem.textContent = w.remaining;
+      c._slots.textContent = w.slots + "/" + CONFIG.squadSize;
+      c.classList.toggle("full", w.slots >= CONFIG.squadSize);
+      let blocked = false;
+      if (phase === "manager" && pendingPrice != null) {
+        blocked = w.slots >= CONFIG.squadSize || pendingPrice > w.remaining;
+      }
+      c.classList.toggle("blocked", blocked);
+      c.classList.toggle("picked", pendingManager === i);
+    });
+  }
+
+  /* ---------- assignment bar render ---------- */
+
+  function renderAssignBar() {
+    if (!SELECTED) {
+      assignBar.classList.remove("sel");
+      return;
+    }
+    assignBar.classList.add("sel");
+
+    playerBox.replaceChildren();
+    playerBox.appendChild(photoCell(SELECTED));
+    const nm = document.createElement("span");
+    nm.textContent = SELECTED.name;
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = ` ${SELECTED.position} · ${SELECTED.club} · ${fmtVal(SELECTED.value)}`;
+    playerBox.append(nm, meta);
+
+    priceInput.disabled = phase === "manager";
+    stepHint.textContent = phase === "price"
+      ? "type price → Enter"
+      : `1–${MANAGERS.length} pick manager → Enter confirm`;
+    confirmBtn.disabled = !(phase === "manager" && pendingManager != null);
+  }
+
+  /* ---------- assignment actions ---------- */
+
+  function setPhase(p) { phase = p; assignBar.dataset.phase = p; }
+
+  function selectPlayer(p) {
+    if (!p || p.status === "sold") return;      // sold players are not re-assignable here
+    SELECTED = p;
+    pendingManager = null;
+    pendingPrice = null;
+    setPhase("price");
+    priceInput.value = "";
+    assignErr.textContent = "";
+    renderAssignBar();
+    renderWallets();
+    priceInput.focus();
+  }
+
+  function commitPrice() {
+    if (!SELECTED) return;
+    const raw = priceInput.value.trim();
+    const price = Number(raw);
+    if (raw === "" || !Number.isFinite(price)) { assignErr.textContent = "Enter a price."; return; }
+    if (price < CONFIG.minBid) { assignErr.textContent = `Price must be a number ≥ ${CONFIG.minBid}.`; return; }
+    pendingPrice = price;
+    assignErr.textContent = "";
+    setPhase("manager");
+    renderWallets();
+    renderAssignBar();
+    walletBar.focus();
+  }
+
+  function pickManager(i) {
+    if (!SELECTED || phase !== "manager") return;
+    pendingManager = i;
+    assignErr.textContent = "";
+    renderWallets();
+    renderAssignBar();
+  }
+
+  function confirmAssignment() {
+    if (!SELECTED || phase !== "manager") return;
+    if (pendingManager == null) { assignErr.textContent = `Pick a manager (1–${MANAGERS.length}).`; return; }
+    const m = MANAGERS[pendingManager];
+    const w = walletOf(m);
+    if (w.slots >= CONFIG.squadSize) {
+      assignErr.textContent = `${m.name}'s squad is full (${CONFIG.squadSize}/${CONFIG.squadSize}).`;
+      return;
+    }
+    if (pendingPrice > w.remaining) {
+      assignErr.textContent = `${pendingPrice} over budget — ${m.name} has ${w.remaining} left.`;
+      return;
+    }
+    SELECTED.owner = m.id;
+    SELECTED.price = pendingPrice;
+    SELECTED.status = "sold";
+    endSelection(true);
+  }
+
+  function markUnsold() {
+    if (!SELECTED) return;
+    SELECTED.status = "unsold";
+    SELECTED.owner = null;
+    SELECTED.price = null;
+    endSelection(true);
+  }
+
+  function cancelSelection() {
+    if (!SELECTED) return;
+    endSelection(false);
+  }
+
+  function endSelection(clearSearch) {
+    SELECTED = null;
+    pendingManager = null;
+    pendingPrice = null;
+    setPhase("browse");
+    priceInput.value = "";
+    priceInput.disabled = false;
+    assignErr.textContent = "";
+    if (clearSearch) search.value = "";
+    renderAssignBar();
+    render();                 // sold/unsold player drops out of the view here
+    search.focus();
+  }
+
+  function onCardClick(i) {
+    // mouse path: one click commits to that manager (validates first)
+    if (!SELECTED) return;
+    if (phase === "price") { commitPrice(); if (phase !== "manager") return; }
+    pendingManager = i;
+    confirmAssignment();
+  }
+
+  function refresh() {
+    if (SELECTED) cancelSelection();
+    else render();
+  }
+
+  /* ---------- keyboard routing ---------- */
+
+  // Selection owns the keyboard once a player is picked.
+  function routeKey(e) {
+    if (phase === "browse") return;
+    if (e.key === "Escape") { e.preventDefault(); cancelSelection(); return; }
+    if (e.key === "u" || e.key === "U") { e.preventDefault(); markUnsold(); return; }
+
+    if (phase === "price") {
+      if (e.key === "Enter") { e.preventDefault(); commitPrice(); }
+      return;                              // digits / . / backspace fall through to the input
+    }
+
+    if (phase === "manager") {
+      if (e.key === "Enter") { e.preventDefault(); confirmAssignment(); return; }
+      if (e.key === "Backspace") {         // step back to editing the price
+        e.preventDefault();
+        pendingManager = null;
+        setPhase("price");
+        renderWallets();
+        renderAssignBar();
+        priceInput.focus();
+        priceInput.select();
+        return;
+      }
+      const n = parseInt(e.key, 10);
+      if (n >= 1 && n <= MANAGERS.length) { e.preventDefault(); pickManager(n - 1); }
+    }
+  }
+  document.addEventListener("keydown", routeKey);
 
   /* ---------- wiring ---------- */
 
-  search.addEventListener("input", render);
-  sortSel.addEventListener("change", render);
-  search.addEventListener("keydown", e => { if (e.key === "Escape") { search.value = ""; render(); } });
+  search.addEventListener("input", () => { if (phase === "browse") render(); });
+  search.addEventListener("keydown", e => {
+    if (phase !== "browse") return;
+    if (e.key === "ArrowDown") { e.preventDefault(); moveHi(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); moveHi(-1); }
+    else if (e.key === "Enter") { e.preventDefault(); if (viewList[hi]) selectPlayer(viewList[hi]); }
+    else if (e.key === "Escape") { if (search.value) { search.value = ""; render(); } }
+  });
 
-  clubFilter.onChange = render;
-  posFilter.onChange = render;
+  sortSel.addEventListener("change", refresh);
+  clubFilter.onChange = refresh;
+  posFilter.onChange = refresh;
+
+  confirmBtn.addEventListener("click", () => confirmAssignment());
+  unsoldBtn.addEventListener("click", () => markUnsold());
+  cancelBtn.addEventListener("click", () => cancelSelection());
 
   render();
   search.focus();
