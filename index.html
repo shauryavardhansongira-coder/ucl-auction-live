@@ -10,36 +10,47 @@
       box-sizing: border-box;
     }
 
-    :root {
-      --bg: #0f1216;
-      --panel: #161b22;
-      --line: #2a323d;
-      --text: #e6edf3;
-      --muted: #9aa7b4;
-      --accent: #4c8dff;
-      --row2: #151a21;
-      --hover: #1d2530;
-      --hd: #1b2230;
-      --err: #d9534f;
-      --ok: #3fb950;
-      --warn: #c8922a;
-    }
+    /* ============================================================
+       Design tokens — the only place colour lives. Everything below
+       reads these; nothing else in this file hardcodes a hex value
+       for page chrome. Committed to one dark theme deliberately: this
+       screen runs once, for a couple of hours, on one shared laptop —
+       it shouldn't shift look with someone's OS setting mid-auction.
 
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg: #f6f7f9;
-        --panel: #ffffff;
-        --line: #d9dee5;
-        --text: #1a1f26;
-        --muted: #5b6672;
-        --accent: #1f6feb;
-        --row2: #f2f4f8;
-        --hover: #e9eef6;
-        --hd: #eef1f5;
-        --err: #c9302c;
-        --ok: #1a7f37;
-        --warn: #9a6700;
-      }
+       Levels, darkest to lightest: bg (page) < surface-1 (toolbar,
+       panels, headers) < surface-2 (cards, alt rows) < surface-3
+       (hover/active). Text: text (primary) > text-2 (secondary,
+       still AA) > text-3 (tertiary — de-emphasised/settled content,
+       still AA at normal size against every surface here).
+       ============================================================ */
+    :root {
+      --bg: #0c0f13;
+      --surface-1: #141920;
+      --surface-2: #1a2029;
+      --surface-3: #232b36;
+      --border: #2a323d;
+      --border-strong: #3b4552;
+
+      --text: #eef2f6;
+      --text-2: #9aa7b4;
+      --text-3: #7d8895;
+      --on-color: #ffffff;
+
+      --accent: #5b9bff;
+      --ok: #3fbf76;
+      --warn: #dd9c2e;
+      --err: #ef5451;
+      --warn-wash: #241d10;
+
+      /* legacy aliases — kept so every existing rule below (panel/line/
+       row2/hover/hd/muted) still resolves through the token system
+       above rather than a scattered literal. */
+      --panel: var(--surface-1);
+      --line: var(--border);
+      --muted: var(--text-2);
+      --row2: var(--surface-2);
+      --hover: var(--surface-3);
+      --hd: var(--surface-1);
     }
 
     html,
@@ -51,7 +62,8 @@
     body {
       background: var(--bg);
       color: var(--text);
-      font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-variant-numeric: tabular-nums;
       -webkit-font-smoothing: antialiased;
     }
 
@@ -67,7 +79,7 @@
       gap: 8px;
       align-items: center;
       flex-wrap: wrap;
-      padding: 8px;
+      padding: 6px 8px;
       background: var(--panel);
       border-bottom: 1px solid var(--line);
     }
@@ -288,12 +300,15 @@
       display: none;
     }
 
+    /* Manager identity colour as a top edge on their column — paired,
+     as everywhere else, with the name text right beside the photo. */
     .team-col {
       display: flex;
       flex-direction: column;
       min-width: 0;
       min-height: 0;
       border: 1px solid var(--line);
+      border-top: 3px solid var(--mgr-color, var(--border));
       border-radius: 10px;
       background: var(--panel);
       overflow: hidden;
@@ -327,7 +342,7 @@
       justify-content: center;
       font-size: 14px;
       font-weight: 800;
-      color: #fff;
+      color: var(--on-color);
     }
 
     .team-head-info {
@@ -495,15 +510,20 @@
       outline: none;
     }
 
+    /* Manager identity colour (--mgr-color, set inline per card from
+     CONFIG) shows up as this left edge everywhere a manager has a card —
+     wallet bar, lot panel, edit dialog — always paired with the name
+     text right next to it, never colour carrying the identity alone. */
     .mgr {
       position: relative;
       display: flex;
       flex-direction: column;
       gap: 1px;
-      padding: 4px 8px 5px;
+      padding: 4px 8px 5px 7px;
       border: 1px solid var(--line);
+      border-left: 4px solid var(--mgr-color, var(--border));
       border-radius: 6px;
-      background: var(--bg);
+      background: var(--surface-2);
       min-width: 0;
     }
 
@@ -520,6 +540,22 @@
       line-height: 1.35;
     }
 
+    .mgr-namerow {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding-right: 16px;
+      min-width: 0;
+    }
+
+    .mgr-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--mgr-color, var(--border));
+      flex: none;
+    }
+
     .mgr-name {
       font-size: 10px;
       font-weight: 700;
@@ -529,26 +565,43 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      padding-right: 16px;
+      min-width: 0;
     }
 
-    /* max bid is the number managers actually need mid-auction — keep it the loudest thing in the card */
+    /* Max bid is the single number a manager needs mid-auction — the
+     largest, highest-contrast figure in this whole region. When they
+     can't bid at all, it stops being a number and becomes a filled,
+     labelled flag: unmistakable at a glance, not a colour tint. */
     .mgr-maxbid {
-      font-size: 23px;
+      font-size: 27px;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
-      line-height: 1.15;
-      margin-top: 1px;
+      line-height: 1.1;
+      margin-top: 2px;
+      color: var(--text);
+    }
+
+    .mgr-maxbid.full,
+    .mgr-maxbid.belowmin {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+      padding: 3px 7px;
+      border-radius: 5px;
+      line-height: 1.3;
+      margin-top: 5px;
     }
 
     .mgr-maxbid.full {
-      font-size: 13px;
-      color: var(--ok);
-      font-weight: 700;
+      background: var(--ok);
+      color: var(--on-color);
     }
 
     .mgr-maxbid.belowmin {
-      color: var(--err);
+      background: var(--err);
+      color: var(--on-color);
     }
 
     .mgr-rem {
@@ -597,7 +650,7 @@
     }
 
     .mgr.blocked {
-      opacity: .45;
+      opacity: .5;
     }
 
     .mgr.blocked .mgr-maxbid {
@@ -612,9 +665,9 @@
     .lotpanel {
       position: relative;
       display: flex;
-      gap: 18px;
+      gap: 16px;
       align-items: stretch;
-      padding: 10px 14px;
+      padding: 8px 14px;
       background: var(--panel);
       border-bottom: 1px solid var(--line);
       overflow-x: auto;
@@ -750,21 +803,23 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 9px;
+      padding: 6px 10px 6px 8px;
       border: 1px solid var(--line);
+      border-left: 4px solid var(--mgr-color, var(--border));
       border-radius: 10px;
-      background: var(--bg);
+      background: var(--surface-2);
       min-width: 0;
     }
 
     .lot-mgr.picked {
       border-color: var(--accent);
+      border-left-color: var(--accent);
       box-shadow: 0 0 0 1px var(--accent) inset;
     }
 
     .lot-mgr-photo {
-      width: 56px;
-      height: 56px;
+      width: 52px;
+      height: 52px;
       border-radius: 8px;
       object-fit: cover;
       background: var(--bg);
@@ -774,15 +829,15 @@
 
     .lot-mgr-initials {
       display: flex;
-      width: 56px;
-      height: 56px;
+      width: 52px;
+      height: 52px;
       border-radius: 8px;
       flex: none;
       align-items: center;
       justify-content: center;
-      font-size: 17px;
+      font-size: 16px;
       font-weight: 800;
-      color: #fff;
+      color: var(--on-color);
     }
 
     .lot-mgr-info {
@@ -792,8 +847,23 @@
       min-width: 0;
     }
 
+    .lot-mgr-namerow {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .lot-mgr-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--mgr-color, var(--border));
+      flex: none;
+    }
+
     .lot-mgr-name {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: .03em;
@@ -804,16 +874,66 @@
       white-space: nowrap;
     }
 
-    /* position + count/limit on one line — a bare number means nothing without
+    /* The max bid — the number a manager actually needs while a lot is
+     live — is deliberately the largest, highest-contrast figure anywhere
+     in the lot panel: bigger than the player's own stats, bigger than the
+     position count below it. When they can't bid, same filled-flag
+     treatment as the wallet strip, never just a dimmer number. */
+    .lot-mgr-maxbid {
+      font-size: 26px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.05;
+      margin-top: 1px;
+      color: var(--text);
+    }
+
+    .lot-mgr-maxbid.full,
+    .lot-mgr-maxbid.belowmin {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+      padding: 2px 6px;
+      border-radius: 5px;
+      line-height: 1.3;
+      margin-top: 3px;
+    }
+
+    .lot-mgr-maxbid.full {
+      background: var(--ok);
+      color: var(--on-color);
+    }
+
+    .lot-mgr-maxbid.belowmin {
+      background: var(--err);
+      color: var(--on-color);
+    }
+
+    .lot-mgr-meta {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-top: 1px;
+    }
+
+    .lot-mgr-rem {
+      font-size: 10px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* position + count/limit — a bare number means nothing without
      knowing which position or what the cap is */
     .lot-mgr-pos {
       display: flex;
       align-items: baseline;
-      gap: 5px;
+      gap: 4px;
     }
 
     .lot-mgr-pos-label {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: .03em;
@@ -821,10 +941,11 @@
     }
 
     .lot-mgr-pos-num {
-      font-size: 24px;
+      font-size: 14px;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
       line-height: 1.1;
+      color: var(--text);
     }
 
     .lot-mgr-pos-num.atcap {
@@ -962,14 +1083,14 @@
       letter-spacing: .03em;
       text-transform: uppercase;
       color: var(--muted);
-      padding: 6px 8px;
+      padding: 5px 8px;
       border-bottom: 1px solid var(--line);
       cursor: default;
       contain: paint;
     }
 
     tbody td {
-      padding: 3px 8px;
+      padding: 2px 8px;
       border-bottom: 1px solid var(--line);
       white-space: nowrap;
       overflow: hidden;
@@ -991,21 +1112,48 @@
 
     tbody tr.r.hi td {
       background: var(--accent);
-      color: #fff;
+      color: var(--on-color);
     }
 
     tbody tr.r.hi td .nm,
     tbody tr.r.hi td .meta,
     tbody tr.r.hi td .mark {
-      color: #fff;
+      color: var(--on-color);
     }
 
+    /* Sold — settled, de-emphasised relative to available rows. Text drops
+     a level, photo/badges fade, but the owner+price marker (.mark.sold)
+     is explicitly excluded so it stays legible — that's the one thing
+     worth reading on a row you've already closed out. */
     tbody tr.r.soldrow {
       cursor: default;
     }
 
     tbody tr.r.soldrow td {
+      color: var(--text-3);
+    }
+
+    tbody tr.r.soldrow .ph,
+    tbody tr.r.soldrow .ph-txt,
+    tbody tr.r.soldrow .cr,
+    tbody tr.r.soldrow .cr-txt,
+    tbody tr.r.soldrow .pos {
       opacity: .5;
+    }
+
+    tbody tr.r.soldrow .mark.sold {
+      color: var(--text-2);
+    }
+
+    /* Unsold — a third state, not a dimmer sold or a plain available: a
+     warm edge + wash flags "went to the block and didn't move," while
+     text stays at full weight since it's still very much in play. */
+    tbody tr.r.unsoldrow {
+      background: var(--warn-wash);
+    }
+
+    tbody tr.r.unsoldrow td:first-child {
+      box-shadow: inset 3px 0 0 var(--warn);
     }
 
     tr.grp td {
@@ -1079,6 +1227,9 @@
     }
 
     .mark {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       font-size: 10px;
       font-weight: 700;
       color: var(--muted);
@@ -1089,12 +1240,20 @@
       display: none;
     }
 
+    .mark-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex: none;
+    }
+
     .mark.unsold {
       color: var(--warn);
+      letter-spacing: .03em;
     }
 
     .mark.sold {
-      color: var(--accent);
+      color: var(--text-2);
     }
 
     .club {
@@ -1130,7 +1289,7 @@
       border-radius: 4px;
       font-size: 10px;
       font-weight: 700;
-      color: #fff;
+      color: var(--on-color);
     }
 
     /* ---------- transaction log view ---------- */
@@ -1232,6 +1391,21 @@
       border-color: var(--err);
     }
 
+    .log-what {
+      display: inline-flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .log-owner-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex: none;
+      align-self: center;
+    }
+
     .log-what .sub {
       color: var(--muted);
     }
@@ -1285,7 +1459,7 @@
     /* ---------- invariant failure banner ---------- */
     .invariant-banner {
       background: var(--err);
-      color: #fff;
+      color: var(--on-color);
       padding: 6px 12px;
       font-size: 12px;
       font-weight: 700;
@@ -1383,8 +1557,9 @@
 
     .edit-mgr {
       text-align: left;
-      padding: 7px 9px;
+      padding: 7px 9px 7px 8px;
       border: 1px solid var(--line);
+      border-left: 3px solid var(--mgr-color, var(--border));
       border-radius: 8px;
       background: var(--bg);
       color: var(--text);
@@ -1394,6 +1569,7 @@
 
     .edit-mgr.on {
       border-color: var(--accent);
+      border-left-color: var(--accent);
       box-shadow: 0 0 0 1px var(--accent) inset;
     }
 
@@ -1552,11 +1728,16 @@
        hardcoded, so a different league = edit this block alone.
        ============================================================ */
     const CONFIG = {
+      // `color` is each manager's identity everywhere in the UI — wallet
+      // card, lot panel, teams column, sold-row marker, log entries. Pick
+      // four that stay distinguishable side by side and don't lean on a
+      // red/green pair; a fifth manager with no colour set here falls back
+      // to an auto-generated one (see managerColor()).
       managers: [
-        { name: "Name1", photo: "assets/managers/1.jpg" },
-        { name: "Name2", photo: "assets/managers/2.jpg" },
-        { name: "Name3", photo: "assets/managers/3.jpg" },
-        { name: "Name4", photo: "assets/managers/4.jpg" }
+        { name: "Name1", photo: "assets/managers/1.jpg", color: "#5b9bff" },
+        { name: "Name2", photo: "assets/managers/2.jpg", color: "#e2953a" },
+        { name: "Name3", photo: "assets/managers/3.jpg", color: "#b47ee8" },
+        { name: "Name4", photo: "assets/managers/4.jpg", color: "#2fb8ac" }
       ],
       startingBudget: 200,
       squadSize: 15,
@@ -1881,7 +2062,8 @@
       const MANAGERS = CONFIG.managers.map((raw, i) => ({
         id: i,
         name: (raw && raw.name && String(raw.name).trim()) || ("Manager " + (i + 1)),
-        photo: (raw && raw.photo) || null
+        photo: (raw && raw.photo) || null,
+        color: (raw && raw.color) || managerColor(i)
       }));
 
       function walletOf(m) {
@@ -2357,12 +2539,18 @@
       const mgrCards = MANAGERS.map((m, i) => {
         const c = document.createElement("div");
         c.className = "mgr";
+        c.style.setProperty("--mgr-color", m.color);
         const key = document.createElement("span");
         key.className = "mgr-key";
         key.textContent = i < 9 ? String(i + 1) : "·";
+        const nameRow = document.createElement("span");
+        nameRow.className = "mgr-namerow";
+        const dot = document.createElement("span");
+        dot.className = "mgr-dot";
         const name = document.createElement("span");
         name.className = "mgr-name";
         name.textContent = m.name;
+        nameRow.append(dot, name);
         const mb = document.createElement("span");
         mb.className = "mgr-maxbid";
         const rem = document.createElement("span");
@@ -2371,7 +2559,7 @@
         slots.className = "mgr-slots";
         const pos = document.createElement("span");
         pos.className = "mgr-pos";
-        c.append(key, name, mb, rem, slots, pos);
+        c.append(key, nameRow, mb, rem, slots, pos);
         c._mb = mb;
         c._rem = rem;
         c._slots = slots;
@@ -2422,12 +2610,24 @@
       const lotMgrCards = MANAGERS.map(m => {
         const c = document.createElement("div");
         c.className = "lot-mgr";
+        c.style.setProperty("--mgr-color", m.color);
         const photoWrap = document.createElement("div");
         photoWrap.className = "lot-mgr-photo-wrap";
         renderManagerPhoto(photoWrap, m);
-        const nm = document.createElement("div");
+        const nameRow = document.createElement("div");
+        nameRow.className = "lot-mgr-namerow";
+        const dot = document.createElement("span");
+        dot.className = "lot-mgr-dot";
+        const nm = document.createElement("span");
         nm.className = "lot-mgr-name";
         nm.textContent = m.name;
+        nameRow.append(dot, nm);
+        // The max bid is the single most important number on screen during a
+        // lot — reusing the same computeBid() figure already shown in the
+        // wallet strip, just rendered largest here where the bidding focus is.
+        const maxbid = document.createElement("div");
+        maxbid.className = "lot-mgr-maxbid";
+        maxbid.textContent = "0";          // bootstrap value — reserves height before any real selection
         const poslabel = document.createElement("span");
         poslabel.className = "lot-mgr-pos-label";
         poslabel.textContent = ORDERED_POS[0] || "POS";   // bootstrap value — reserves the line's height before any real selection
@@ -2437,12 +2637,20 @@
         const posRow = document.createElement("div");
         posRow.className = "lot-mgr-pos";
         posRow.append(poslabel, poscount);
+        const rem = document.createElement("span");
+        rem.className = "lot-mgr-rem";
+        rem.textContent = "0 left";
+        const metaRow = document.createElement("div");
+        metaRow.className = "lot-mgr-meta";
+        metaRow.append(rem, posRow);
         const info = document.createElement("div");
         info.className = "lot-mgr-info";
-        info.append(nm, posRow);
+        info.append(nameRow, maxbid, metaRow);
         c.append(photoWrap, info);
         c._poslabel = poslabel;
         c._pos = poscount;
+        c._maxbid = maxbid;
+        c._rem = rem;
         return c;
       });
       lotMgrs.append(...lotMgrCards);
@@ -2460,7 +2668,7 @@
           const s = document.createElement("div");
           s.className = initialsClass;
           s.textContent = initialsOf(m.name);
-          s.style.background = managerColor(m.id);
+          s.style.background = m.color;
           return s;
         }
         if (m.photo) {
@@ -2599,6 +2807,12 @@
           card._pos.textContent = capMax > 0 ? `${pc}/${capMax}` : `${pc}`;
           card._pos.classList.toggle("atcap", capMax > 0 && pc >= capMax);
           card.classList.toggle("picked", phase === "manager" && pendingManager === i);
+
+          const w = computeBid(m);
+          card._maxbid.textContent = w.state === "full" ? "Squad full" : w.state === "belowmin" ? "No bid" : fmtMoney(w.maxBid);
+          card._maxbid.classList.toggle("full", w.state === "full");
+          card._maxbid.classList.toggle("belowmin", w.state === "belowmin");
+          card._rem.textContent = w.remaining + " left";
         });
       }
 
@@ -3014,6 +3228,7 @@
       const teamCols = MANAGERS.map(m => {
         const col = document.createElement("div");
         col.className = "team-col";
+        col.style.setProperty("--mgr-color", m.color);
 
         const head = document.createElement("div");
         head.className = "team-head";
@@ -3207,6 +3422,7 @@
         const b = document.createElement("button");
         b.type = "button";
         b.className = "edit-mgr";
+        b.style.setProperty("--mgr-color", m.color);
         const nm = document.createElement("b");
         const l1 = document.createElement("span");
         l1.className = "em-line";
@@ -3437,6 +3653,20 @@
 
       logView.append(logHead, logList);
 
+      // The manager id(s) an entry is about — same identity colour used
+      // everywhere else, always paired here with describeEntry()'s text.
+      function entryOwnerIds(e) {
+        if (e.type === "reassign") {
+          const ids = [];
+          if (e.prev.owner != null) ids.push(e.prev.owner);
+          if (e.next.owner != null && e.next.owner !== e.prev.owner) ids.push(e.next.owner);
+          return ids;
+        }
+        if (e.next.status === "sold" && e.next.owner != null) return [e.next.owner];
+        if (e.prev.status === "sold" && e.prev.owner != null) return [e.prev.owner];
+        return [];
+      }
+
       function renderLog() {
         const undone = LOG.filter(e => e.undoneBy != null).length;
         logCount.textContent = LOG.length
@@ -3474,7 +3704,14 @@
 
           const what = document.createElement("span");
           what.className = "log-what";
-          what.textContent = describeEntry(e);
+          for (const id of entryOwnerIds(e)) {
+            const dot = document.createElement("span");
+            dot.className = "log-owner-dot";
+            const mgr = MANAGERS[id];
+            if (mgr) dot.style.background = mgr.color;
+            what.appendChild(dot);
+          }
+          what.appendChild(document.createTextNode(describeEntry(e)));
 
           row.append(seq, time, type, what);
           frag.appendChild(row);
@@ -3572,22 +3809,27 @@
             gtr.appendChild(gtd);
             frag.appendChild(gtr);
           }
-          // status marker inside the name cell
+          // status marker inside the name cell — sold carries the owner's
+          // colour as a dot, always paired with their name as text next to it.
           const mk = p._mark;
           if (mk) {
             if (p.status === "sold") {
               const mgr = MANAGERS[p.owner];
-              mk.textContent = "→ " + (mgr ? mgr.name : "?") + " " + fmtMoney(p.price);
               mk.className = "mark sold";
+              const dot = document.createElement("span");
+              dot.className = "mark-dot";
+              if (mgr) dot.style.background = mgr.color;
+              mk.replaceChildren(dot, document.createTextNode((mgr ? mgr.name : "?") + " · " + fmtMoney(p.price)));
             } else if (p.status === "unsold") {
-              mk.textContent = "UNSOLD";
               mk.className = "mark unsold";
+              mk.replaceChildren(document.createTextNode("UNSOLD"));
             } else {
-              mk.textContent = "";
               mk.className = "mark";
+              mk.replaceChildren();
             }
           }
           p._row.classList.toggle("soldrow", p.status === "sold");
+          p._row.classList.toggle("unsoldrow", p.status === "unsold");
           p._row.classList.toggle("alt", alt);
           alt = !alt;
           frag.appendChild(p._row);
@@ -3654,7 +3896,7 @@
         MANAGERS.forEach((m, i) => {
           const w = computeBid(m);
           const c = mgrCards[i];
-          c._mb.textContent = w.state === "full" ? "FULL" : fmtMoney(w.maxBid);
+          c._mb.textContent = w.state === "full" ? "Squad full" : w.state === "belowmin" ? "No bid" : fmtMoney(w.maxBid);
           c._mb.classList.toggle("full", w.state === "full");
           c._mb.classList.toggle("belowmin", w.state === "belowmin");
           c._rem.textContent = w.remaining + " left";
