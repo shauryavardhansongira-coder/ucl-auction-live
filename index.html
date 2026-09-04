@@ -973,6 +973,10 @@
       min-height: 34px;
     }
 
+    .assignbar[hidden] {
+      display: none;
+    }
+
     .assignbar .hint {
       color: var(--muted);
     }
@@ -1745,6 +1749,238 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 12px;
     }
+
+    /* ============================================================
+       LIVE MIRRORING — room bar, connection status, viewer chrome.
+       Everything here is additive: with mirroring off, none of these
+       elements are ever shown and the host layout is byte-identical
+       to what it was.
+       ============================================================ */
+
+    /* Host only. The room key and the viewer link are the two things
+       someone has to read off this screen and type into a phone, so
+       they get their own full-width row at the very top rather than a
+       corner chip. */
+    .roombar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 6px 10px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+    }
+
+    .roombar[hidden] {
+      display: none;
+    }
+
+    .roombar-label {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .roombar-key {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      color: var(--text);
+      padding: 1px 8px;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      background: var(--bg);
+    }
+
+    .roombar-url {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: var(--accent);
+      user-select: all;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 46vw;
+    }
+
+    .roombar-note {
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
+    /* Connection chip — sits beside the save status, same visual weight,
+       because "am I saving?" and "am I mirroring?" are the same class of
+       question and both have to be answerable at a glance mid-lot. */
+    .live-status {
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .live-status.ok {
+      color: var(--ok);
+      font-weight: 600;
+    }
+
+    .live-status.pending {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .live-status.warn {
+      color: var(--warn);
+      font-weight: 700;
+    }
+
+    .live-status.bad {
+      color: var(--err);
+      font-weight: 700;
+    }
+
+    /* Stale-data banner. A phone propped up across the room is exactly
+       where a frozen screen looks identical to a live one, so a dropped
+       connection gets a full-width bar, not just the chip above. */
+    .live-banner {
+      padding: 7px 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--on-color);
+      background: var(--err);
+    }
+
+    .live-banner.warn {
+      background: var(--warn);
+      color: #1b1206;
+    }
+
+    .live-banner[hidden] {
+      display: none;
+    }
+
+    .viewer-badge {
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--bg);
+      background: var(--select);
+    }
+
+    /* Collapsible player table (viewer). The lot panel and wallets are
+       what a viewer actually watches; the 900-row table is reference
+       material and on a phone it would push everything else off screen. */
+    .listtoggle {
+      display: none;
+    }
+
+    body.viewer .listtoggle {
+      display: inline-block;
+    }
+
+    body.viewer .auctionview.listcollapsed .main {
+      display: none;
+    }
+
+    /* Read-only: nothing in the mirrored views is clickable, so nothing
+       should advertise that it is. */
+    body.viewer tbody tr.r,
+    body.viewer .team-row.clickable {
+      cursor: default;
+    }
+
+    body.viewer tbody tr.r:hover {
+      background: inherit;
+    }
+
+    body.viewer tbody tr.r.alt:hover {
+      background: var(--row2);
+    }
+
+    /* ---------- viewer on a narrow screen ---------- */
+
+    @media (max-width: 760px) {
+      body.viewer {
+        font-size: 14px;
+      }
+
+      body.viewer .apptabs {
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+
+      body.viewer .apptabs-right {
+        margin-left: 0;
+        width: 100%;
+      }
+
+      body.viewer .toolbar {
+        padding: 5px 6px;
+        gap: 6px;
+      }
+
+      body.viewer .toolbar input[type=search] {
+        min-width: 120px;
+      }
+
+      /* 2×2 instead of one squeezed row — four managers on a 390px
+         screen is ~90px each otherwise, which is narrower than the
+         numbers printed in them. */
+      body.viewer .walletbar {
+        grid-auto-flow: row;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      /* Lot panel is the priority screen: player on top, then the four
+         manager cards two-up underneath, nothing scrolling sideways. */
+      body.viewer .lotpanel {
+        flex-direction: column;
+        gap: 10px;
+        padding: 8px 10px;
+        overflow-x: visible;
+      }
+
+      body.viewer .lot-player {
+        min-width: 0;
+      }
+
+      body.viewer .lot-stats {
+        flex-wrap: wrap;
+      }
+
+      body.viewer .lot-mgrs {
+        grid-auto-flow: row;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      body.viewer .lot-mgr-maxbid {
+        font-size: 26px;
+      }
+
+      /* Squads stack rather than shrinking to four unreadable columns. */
+      body.viewer .teamsview {
+        grid-auto-flow: row;
+        grid-auto-columns: auto;
+      }
+
+      body.viewer .roombar-url {
+        max-width: 100%;
+      }
+
+      body.viewer .log-head .log-hint {
+        display: none;
+      }
+
+      body.viewer .log-row {
+        flex-wrap: wrap;
+      }
+    }
   </style>
 </head>
 
@@ -1780,6 +2016,18 @@
       imageUrls: {
         player: "https://img.uefa.com/imgml/TP/players/1/2027/324x324/{id}.jpg",
         club: "https://img.uefa.com/imgml/TP/teams/logos/140x140/{id}.png"
+      },
+      // Live mirroring target. Only the host ever writes here; viewers
+      // only read. Blanking this object out disables mirroring entirely
+      // and leaves the single-browser app exactly as it was.
+      firebase: {
+        apiKey: "AIzaSyB_VQvsrZb1aLFLG8GDo37XI-Xyq3QIics",
+        authDomain: "ucl-auction-live.firebaseapp.com",
+        databaseURL: "https://ucl-auction-live-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "ucl-auction-live",
+        storageBucket: "ucl-auction-live.firebasestorage.app",
+        messagingSenderId: "395804926714",
+        appId: "1:395804926714:web:d65dd53f0a30d8ebf95f43"
       }
     };
 
@@ -1985,11 +2233,455 @@
       app.appendChild(box);
     }
 
-    /* ---------- load ---------- */
+    /* ============================================================
+       LIVE MIRRORING
+       ------------------------------------------------------------
+       One host drives the auction exactly as before and publishes a
+       small snapshot after every change; up to a handful of viewers
+       subscribe and re-derive everything locally. Strictly one-way:
+       viewers never write to Firebase and never write auction state
+       to localStorage.
+
+       Role comes from the URL and nothing else:
+
+         ?host        host — room key from localStorage, or a new one
+         ?host=KEY    host — in room KEY
+         ?room=KEY    viewer — in room KEY
+         anything else   viewer with no room (instructions screen)
+
+       Defaulting to viewer is the whole point of that table: someone
+       opening the bare URL must not silently become a second writer.
+       Two hosts on one room would interleave two different truths
+       into the same node, so a host that finds another host already
+       heartbeating refuses to start rather than racing it.
+
+       This whole block is additive. If Firebase never loads, the host
+       app below still runs exactly as it did on localStorage alone —
+       localStorage remains the crash-recovery path, mirroring is only
+       a second, lossy copy for people watching.
+       ============================================================ */
+
+    const LIVE_CFG = {
+      // Pinned: an auction is not the moment to discover that "latest"
+      // changed an API. ES module CDN — no npm, no bundler, no build.
+      sdkVersion: "10.12.2",
+      root: "rooms",
+      logLimit: 20,            // last N log entries published, display only
+      heartbeatMs: 5000,       // host liveness ping
+      staleHostMs: 20000,      // a host quiet for this long is assumed gone
+      connectTimeoutMs: 9000,  // how long a starting host waits before giving up
+      publishDebounceMs: 120,  // coalesces the render+publish burst of one action
+      roomKeyStorage: "uclAuction.roomKey.v1"
+    };
+
+    // Firebase keys can't contain . $ # [ ] / — and this string gets read
+    // aloud and typed on a phone, so keep it to lowercase alphanumerics.
+    function cleanRoomKey(s) {
+      return String(s == null ? "" : s).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40);
+    }
+
+    function randomChars(n, alphabet) {
+      let out = "";
+      const buf = new Uint8Array(n);
+      try {
+        crypto.getRandomValues(buf);
+        for (let i = 0; i < n; i++) out += alphabet[buf[i] % alphabet.length];
+      } catch (e) {
+        for (let i = 0; i < n; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+      }
+      return out;
+    }
+
+    // No 0/o/1/l/i — these get dictated across a room.
+    function newRoomKey() { return randomChars(6, "23456789abcdefghjkmnpqrstuvwxyz"); }
+    function newSessionId() { return randomChars(16, "abcdefghijklmnopqrstuvwxyz0123456789"); }
+
+    function readStoredRoomKey() {
+      try { return cleanRoomKey(localStorage.getItem(LIVE_CFG.roomKeyStorage)); }
+      catch (e) { return ""; }
+    }
+
+    function storeRoomKey(k) {
+      // Best effort — a host that can't persist this just gets a new room
+      // on refresh, which the room bar makes obvious.
+      try { localStorage.setItem(LIVE_CFG.roomKeyStorage, k); } catch (e) { /* nothing to do */ }
+    }
+
+    function detectRole() {
+      const qs = new URLSearchParams(location.search);
+      if (qs.has("host")) {
+        const asked = cleanRoomKey(qs.get("host"));
+        return { role: "host", roomKey: asked || readStoredRoomKey() || newRoomKey() };
+      }
+      return { role: "viewer", roomKey: cleanRoomKey(qs.get("room")) };
+    }
+
+    function viewerUrlFor(roomKey) {
+      const base = location.origin && location.origin !== "null"
+        ? location.origin + location.pathname
+        : location.href.split("?")[0].split("#")[0];
+      return base + "?room=" + encodeURIComponent(roomKey);
+    }
+
+    function liveConfigured() {
+      const f = CONFIG.firebase;
+      return !!(f && f.apiKey && f.databaseURL);
+    }
+
+    function errText(e) { return String((e && (e.message || e.code)) || e || "unknown error"); }
+
+    /* ---------- the live client ----------
+       A plain state bag plus a few async entry points. The UI reads the
+       flags on every tick to draw the status chip; it never has to know
+       anything about Firebase itself. */
+
+    function createLive(role, roomKey) {
+      const L = {
+        role,
+        roomKey,
+        sessionId: newSessionId(),
+        enabled: false,        // Firebase is up and this client may use it
+        reason: "",            // why not, when not
+        connected: false,      // .info/connected
+        hostPresent: false,    // viewer: is a host heartbeating right now?
+        lastHostBeat: 0,       // viewer: server time of that heartbeat
+        hasRemote: false,      // viewer: has any snapshot arrived at all?
+        lastPublishAt: null,   // host
+        lastReceiveAt: null,   // viewer
+        publishError: "",
+        lostRoom: false,       // host: another session claimed the room
+        onStatus: null,        // set by the UI
+        onRemoteState: null    // set by the UI (viewer only)
+      };
+
+      let fb = null;               // the bits of the SDK we use
+      let serverOffset = 0;        // ms to add to Date.now() for server time
+      let hostRef = null;
+      let hostStartedAt = 0;
+      let stateRef = null;
+      let heartbeatTimer = null;
+      let publishTimer = null;
+      let buildPayload = null;     // set by the UI; called off the click path
+      let publishInFlight = false;
+      let publishAgain = false;
+
+      function status() {
+        // Status chrome must never be able to break the auction.
+        if (L.onStatus) { try { L.onStatus(L); } catch (e) { /* ignore */ } }
+      }
+
+      function serverNow() { return Date.now() + serverOffset; }
+
+      async function loadSdk() {
+        const v = LIVE_CFG.sdkVersion;
+        const [appMod, dbMod] = await Promise.all([
+          import(`https://www.gstatic.com/firebasejs/${v}/firebase-app.js`),
+          import(`https://www.gstatic.com/firebasejs/${v}/firebase-database.js`)
+        ]);
+        const app = appMod.initializeApp(CONFIG.firebase);
+        const db = dbMod.getDatabase(app);
+        return {
+          db,
+          ref: dbMod.ref,
+          set: dbMod.set,
+          update: dbMod.update,
+          remove: dbMod.remove,
+          onValue: dbMod.onValue,
+          runTransaction: dbMod.runTransaction,
+          onDisconnect: dbMod.onDisconnect,
+          serverTimestamp: dbMod.serverTimestamp
+        };
+      }
+
+      // .info/connected drives the whole "is this screen live or frozen"
+      // question for both roles, so it is wired up before anything else.
+      function watchConnection() {
+        fb.onValue(fb.ref(fb.db, ".info/connected"), snap => {
+          const now = snap.val() === true;
+          const reconnected = now && !L.connected;
+          L.connected = now;
+          // An onDisconnect is a one-shot the server fires and then forgets,
+          // and firing it deleted our host record — so a reconnecting host
+          // has to re-arm the handler and rewrite the record, not just carry
+          // on heartbeating into a node that no longer says who owns it.
+          if (reconnected && L.role === "host" && hostRef) armHostPresence();
+          status();
+        }, () => { L.connected = false; status(); });
+
+        // Clock skew between this device and the server. Host staleness is
+        // judged in server time so a phone with a wrong clock can't declare
+        // a live host dead (or a dead one live).
+        fb.onValue(fb.ref(fb.db, ".info/serverTimeOffset"), snap => {
+          const v = snap.val();
+          if (typeof v === "number" && isFinite(v)) serverOffset = v;
+        }, () => { /* offset stays 0 — worst case we fall back to local time */ });
+      }
+
+      // Resolves with the first value at `path`, or undefined on timeout/error.
+      // `unsub` is assigned after onValue returns, so a callback that fires
+      // synchronously has to be unsubscribed on the way out instead.
+      function firstValue(path, ms) {
+        return new Promise(resolve => {
+          let done = false, unsub = null;
+          const finish = v => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            if (unsub) unsub();
+            resolve(v);
+          };
+          const timer = setTimeout(() => finish(undefined), ms);
+          unsub = fb.onValue(fb.ref(fb.db, path), snap => finish(snap.val()), () => finish(undefined));
+          if (done) unsub();
+        });
+      }
+
+      // Waits for connected === true specifically — the first value is very
+      // often `false`, so this can't be firstValue().
+      function waitForConnection(ms) {
+        return new Promise((resolve, reject) => {
+          if (L.connected) { resolve(); return; }
+          let done = false, unsub = null;
+          const finish = (err) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            if (unsub) unsub();
+            if (err) reject(err); else resolve();
+          };
+          const timer = setTimeout(() => finish(new Error("Timed out waiting for a Firebase connection.")), ms);
+          unsub = fb.onValue(fb.ref(fb.db, ".info/connected"), snap => {
+            if (snap.val() === true) finish(null);
+          }, err => finish(err));
+          if (done && unsub) unsub();
+        });
+      }
+
+      /* ---- host ---- */
+
+      // Returns { ok: true } or { ok: false, conflict: <other host record> }.
+      // The transaction is what makes this safe against two hosts opening
+      // the link at the same instant: only one write can win, and the loser
+      // sees the winner's record and aborts.
+      async function claimHost() {
+        hostRef = fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/host`);
+        let conflict = null;
+        const res = await fb.runTransaction(hostRef, cur => {
+          if (cur && cur.sessionId && cur.sessionId !== L.sessionId) {
+            const beat = typeof cur.heartbeatAt === "number" ? cur.heartbeatAt : 0;
+            if (serverNow() - beat < LIVE_CFG.staleHostMs) {
+              conflict = cur;
+              return;                      // abort — someone else is driving
+            }
+          }
+          // serverTimestamp() sentinels aren't allowed inside a transaction,
+          // so write server-corrected local time; the heartbeat below uses
+          // the real sentinel from then on.
+          return {
+            sessionId: L.sessionId,
+            startedAt: (cur && cur.sessionId === L.sessionId && cur.startedAt) || serverNow(),
+            heartbeatAt: serverNow()
+          };
+        }, { applyLocally: false });
+
+        if (!res.committed) {
+          return { ok: false, conflict: conflict || (res.snapshot && res.snapshot.val()) || null };
+        }
+        const mine = res.snapshot && res.snapshot.val();
+        hostStartedAt = (mine && typeof mine.startedAt === "number") ? mine.startedAt : serverNow();
+        return { ok: true };
+      }
+
+      // sessionId and startedAt go out with every beat, not just the claim:
+      // if the record was wiped by an onDisconnect we'd otherwise leave behind
+      // a node with a heartbeat and no owner, which the next host to arrive
+      // would read as "unclaimed" and take.
+      function writeHostRecord() {
+        if (!fb || !hostRef) return;
+        fb.update(hostRef, {
+          sessionId: L.sessionId,
+          startedAt: hostStartedAt || fb.serverTimestamp(),
+          heartbeatAt: fb.serverTimestamp()
+        }).catch(() => { /* the next beat retries */ });
+      }
+
+      function armHostPresence() {
+        if (!fb || !hostRef) return;
+        try { fb.onDisconnect(hostRef).remove(); } catch (e) { /* best effort */ }
+        writeHostRecord();
+      }
+
+      function startHeartbeat() {
+        // A cleanly closed tab frees the room immediately; the heartbeat
+        // covers the messy cases (asleep laptop, killed process, lost wifi)
+        // by letting the record go stale on its own.
+        armHostPresence();
+        heartbeatTimer = setInterval(writeHostRecord, LIVE_CFG.heartbeatMs);
+
+        // If our own session id ever disappears from the room, someone else
+        // has taken it. Stop publishing rather than interleave with them.
+        fb.onValue(hostRef, snap => {
+          const cur = snap.val();
+          const lost = !!(cur && cur.sessionId && cur.sessionId !== L.sessionId);
+          if (lost !== L.lostRoom) { L.lostRoom = lost; status(); }
+        }, () => { /* read errors show up as a dropped connection instead */ });
+      }
+
+      // Resolves to { ok: true } | { ok: false, kind: "conflict"|"error", ... }.
+      async function startHost() {
+        if (!liveConfigured()) return { ok: false, kind: "error", message: "No Firebase config in CONFIG.firebase." };
+        try {
+          fb = await loadSdk();
+          watchConnection();
+          await waitForConnection(LIVE_CFG.connectTimeoutMs);
+          // Staleness of the existing host record is judged in server time, so
+          // the offset has to be in hand before the claim transaction runs.
+          const off = await firstValue(".info/serverTimeOffset", 2500);
+          if (typeof off === "number" && isFinite(off)) serverOffset = off;
+          const claim = await claimHost();
+          if (!claim.ok) return { ok: false, kind: "conflict", conflict: claim.conflict };
+          startHeartbeat();
+          stateRef = fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/state`);
+          L.enabled = true;
+          status();
+          window.addEventListener("pagehide", releaseHost);
+          return { ok: true };
+        } catch (e) {
+          L.reason = errText(e);
+          status();
+          return { ok: false, kind: "error", message: L.reason };
+        }
+      }
+
+      function releaseHost() {
+        if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+        if (fb && hostRef) { try { fb.remove(hostRef); } catch (e) { /* onDisconnect covers it */ } }
+      }
+
+      /* ---- publishing (host) ---- */
+
+      // Never awaited by a caller, never on the keyboard path: the click
+      // that sold a player has already repainted by the time this runs.
+      function doPublish() {
+        publishTimer = null;
+        if (!L.enabled || L.lostRoom || !stateRef || !buildPayload) return;
+        if (publishInFlight) { publishAgain = true; return; }
+        let payload;
+        try {
+          payload = buildPayload();
+        } catch (e) {
+          L.publishError = "could not build snapshot (" + errText(e) + ")";
+          status();
+          return;
+        }
+        payload.updatedAt = fb.serverTimestamp();
+        publishInFlight = true;
+        fb.set(stateRef, payload).then(() => {
+          L.lastPublishAt = Date.now();
+          L.publishError = "";
+        }, err => {
+          // Surfaced in the status area and nowhere else — a failed mirror
+          // must not interrupt an auction that is otherwise fine.
+          L.publishError = errText(err);
+        }).then(() => {
+          publishInFlight = false;
+          status();
+          if (publishAgain) { publishAgain = false; schedulePublish(); }
+        });
+      }
+
+      function schedulePublish() {
+        if (!L.enabled || L.lostRoom) return;
+        clearTimeout(publishTimer);
+        publishTimer = setTimeout(doPublish, LIVE_CFG.publishDebounceMs);
+      }
+
+      /* ---- viewer ---- */
+
+      async function startViewer() {
+        if (!liveConfigured()) { L.reason = "No Firebase config in CONFIG.firebase."; status(); return { ok: false }; }
+        if (!L.roomKey) { L.reason = "No room key."; status(); return { ok: false }; }
+        try {
+          fb = await loadSdk();
+          watchConnection();
+          L.enabled = true;
+          status();
+
+          fb.onValue(fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/state`), snap => {
+            L.lastReceiveAt = Date.now();
+            L.hasRemote = true;
+            if (L.onRemoteState) L.onRemoteState(snap.val());
+            status();
+          }, err => {
+            L.reason = errText(err);
+            L.enabled = false;
+            status();
+          });
+
+          // A connected viewer looking at a room whose host has walked away
+          // is still looking at stale data, and the connection dot alone
+          // would say "live". This is the other half of that answer.
+          fb.onValue(fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/host`), snap => {
+            const cur = snap.val();
+            L.lastHostBeat = cur && typeof cur.heartbeatAt === "number" ? cur.heartbeatAt : 0;
+            recomputeHostPresent();
+            status();
+          }, () => { L.lastHostBeat = 0; L.hostPresent = false; status(); });
+
+          return { ok: true };
+        } catch (e) {
+          L.reason = errText(e);
+          L.enabled = false;
+          status();
+          return { ok: false };
+        }
+      }
+
+      // A host going quiet produces no event at all — the last heartbeat
+      // just stops ageing well. So presence is recomputed on the UI's
+      // once-a-second tick rather than trusting the last snapshot's
+      // verdict forever.
+      function recomputeHostPresent() {
+        L.hostPresent = !!L.lastHostBeat && (serverNow() - L.lastHostBeat < LIVE_CFG.staleHostMs);
+      }
+
+      function refreshDerived() {
+        if (L.role !== "viewer" || !L.enabled) return;
+        const was = L.hostPresent;
+        recomputeHostPresent();
+        return was !== L.hostPresent;
+      }
+
+      L.startHost = startHost;
+      L.startViewer = startViewer;
+      L.schedulePublish = schedulePublish;
+      L.setPayloadBuilder = fn => { buildPayload = fn; };
+      L.refreshDerived = refreshDerived;
+      L.serverNow = serverNow;
+      return L;
+    }
+
+    const ROLE = detectRole();
+    const LIVE = createLive(ROLE.role, ROLE.roomKey);
+
+    /* ---------- load ----------
+       Players first (both roles need them: viewers merge the host's
+       auction fields onto their own copy of players.json, they are never
+       sent the records themselves), then the role-specific handshake. */
+
+    function showLoading(msg) {
+      app.replaceChildren();
+      const box = document.createElement("div");
+      box.className = "err";
+      const h = document.createElement("h2");
+      h.textContent = msg;
+      box.appendChild(h);
+      app.appendChild(box);
+    }
 
     fetch("players.json", { cache: "no-store" })
       .then(r => { if (!r.ok) throw new Error("HTTP " + r.status + " fetching players.json"); return r.json(); })
-      .then(init)
+      .then(bootstrap)
       .catch(err => {
         showError("Could not load players.json", [
           String((err && err.message) || err),
@@ -1998,6 +2690,81 @@
           "then open  http://localhost:8000/index.html"
         ]);
       });
+
+    function bootstrap(data) {
+      const problems = validate(data);
+      if (problems.length) {
+        const shown = problems.slice(0, 60);
+        if (problems.length > 60) shown.push(`…and ${problems.length - 60} more`);
+        showError(`players.json failed validation — ${problems.length} problem${problems.length > 1 ? "s" : ""}`, shown);
+        return;
+      }
+      if (LIVE.role === "host") bootstrapHost(data);
+      else bootstrapViewer(data);
+    }
+
+    /* ---- host ----
+       The room has to be claimed BEFORE the host UI exists. Building the
+       full app and only then discovering another host is live would leave
+       an operator a keyboard they must not use. */
+
+    function bootstrapHost(data) {
+      storeRoomKey(LIVE.roomKey);
+      showLoading("Claiming room " + LIVE.roomKey + " …");
+      LIVE.startHost().then(res => {
+        if (res.ok) { init(data); return; }
+
+        if (res.kind === "conflict") {
+          const c = res.conflict || {};
+          const since = typeof c.startedAt === "number" ? new Date(c.startedAt).toLocaleTimeString([], { hour12: false }) : null;
+          showError(`Room "${LIVE.roomKey}" already has a host`, [
+            "Another browser is already driving this auction" + (since ? `, since ${since}` : "") + ".",
+            "Two hosts writing to one room would interleave two different versions of the auction into the same state, so this tab will not start as a host.",
+            "If that other host is you on another tab or device, close it and reload here — the room frees itself about 20 seconds after a host stops responding.",
+            "To start a separate auction instead, load this page with a different room key: ?host=some-other-key",
+            "To watch this one read-only: " + viewerUrlFor(LIVE.roomKey)
+          ]);
+          return;
+        }
+
+        // Couldn't reach Firebase at all, so we cannot know whether another
+        // host is out there. Running the auction matters more than mirroring
+        // it — but that is the operator's call to make explicitly, not ours
+        // to make silently.
+        showConfirm({
+          title: "Could not reach Firebase",
+          sub: "The auction can still run on this machine with localStorage autosave, but nothing will be mirrored to viewers — and there is no way to check whether another host is already live in this room.",
+          lines: [
+            res.message || "Connection failed.",
+            "Room key: " + LIVE.roomKey,
+            "Only start offline if you are sure nobody else has this auction open as host."
+          ],
+          buttons: [
+            { label: "Retry", kind: "primary", onClick: () => bootstrapHost(data) },
+            { label: "Start offline — no mirroring", kind: "danger", onClick: () => { LIVE.reason = res.message || "Could not reach Firebase."; init(data); } }
+          ]
+        });
+      });
+    }
+
+    /* ---- viewer ----
+       Built immediately from players.json so a phone shows the layout
+       (and its own connection status) while the first snapshot is still
+       in flight, rather than a blank screen. No localStorage is read and
+       none is written: a viewer's only source of truth is the room. */
+
+    function bootstrapViewer(data) {
+      if (!LIVE.roomKey) {
+        showError("No room to watch", [
+          "This link has no room key, so there is nothing to show.",
+          "Ask the host for their viewer link — it looks like  " + viewerUrlFor("abc123"),
+          "This page never bids and never changes the auction; it only mirrors what the host's screen is doing."
+        ]);
+        return;
+      }
+      buildUI(data, null);
+      LIVE.startViewer();
+    }
 
     /* ---------- validation ---------- */
 
@@ -2023,15 +2790,10 @@
 
     /* ---------- init ---------- */
 
+    // Host-only: viewers never read autosaved auction state (see
+    // bootstrapViewer). Unchanged otherwise — localStorage is still the
+    // crash-recovery path, and Firebase never feeds into it.
     function init(data) {
-      const problems = validate(data);
-      if (problems.length) {
-        const shown = problems.slice(0, 60);
-        if (problems.length > 60) shown.push(`…and ${problems.length - 60} more`);
-        showError(`players.json failed validation — ${problems.length} problem${problems.length > 1 ? "s" : ""}`, shown);
-        return;
-      }
-
       const rd = readLocalStorageRaw();
       if (!rd.ok || !rd.raw) { buildUI(data, null); return; }
 
@@ -2084,6 +2846,20 @@
        ============================================================ */
 
     function buildUI(ALL, restore) {
+      /* Viewer mode. Everything below is the host's code path; READONLY only
+         ever removes things — the mutation entry points, the autosave, the
+         keyboard handlers and the controls that reach them. Nothing derived
+         is transmitted or special-cased: wallets, max bids, position counts
+         and squads are recomputed here from the merged records by exactly
+         the same functions the host runs. */
+      const READONLY = LIVE.role === "viewer";
+      if (READONLY) document.body.classList.add("viewer");
+
+      // Viewer's mirror of the host's last 20 log entries (pre-rendered text,
+      // display only — the real log and its undo snapshots stay host-local).
+      let REMOTE_LOG = [];
+      let warnedPlayerMismatch = false;
+
       /* precompute per-record search/sort keys (records themselves untouched) */
       ALL.forEach(p => {
         p._s = norm((p.name || "") + " " + (p.fullName || ""));
@@ -2202,6 +2978,11 @@
         LOG.push(entry);
         checkInvariants();
         scheduleSave();
+        // Mirroring rides along behind the same choke point as autosave, so
+        // sale / unsold / edit / reassign / release / undo are all covered by
+        // construction. Debounced and fire-and-forget: the keyboard flow never
+        // waits on it (see LIVE.schedulePublish).
+        LIVE.schedulePublish();
         return entry;
       }
 
@@ -2276,6 +3057,7 @@
       }
 
       function performUndo() {
+        if (READONLY) return;      // undo is host-local; the log here is a copy
         const target = lastReversible();
         if (!target) {
           toast("Nothing to undo — no reversible actions in the log yet.", "warn");
@@ -2626,7 +3408,9 @@
 
       const lotEmpty = document.createElement("div");
       lotEmpty.className = "lot-empty-msg";
-      lotEmpty.textContent = "No player selected — pick one from the list below to see bidding details.";
+      lotEmpty.textContent = LIVE.role === "viewer"
+        ? "No lot on the block right now — waiting for the host."
+        : "No player selected — pick one from the list below to see bidding details.";
 
       const lotPlayer = document.createElement("div");
       lotPlayer.className = "lot-player blank";
@@ -3026,6 +3810,65 @@
          debounced off the interaction path so a click never blocks on it,
          however large the log has grown. */
 
+      /* ---------- live mirroring chrome ----------
+         Two things have to be answerable without asking anyone: which room
+         is this, and is what I'm looking at current. The room bar answers
+         the first (host only — it's the thing you read out and share); the
+         status chip and the stale banner answer the second, on both roles. */
+
+      const roomBar = document.createElement("div");
+      roomBar.className = "roombar";
+      roomBar.hidden = true;
+
+      const liveBanner = document.createElement("div");
+      liveBanner.className = "live-banner";
+      liveBanner.setAttribute("role", "alert");
+      liveBanner.hidden = true;
+
+      const liveStatusEl = document.createElement("span");
+      liveStatusEl.className = "live-status";
+      liveStatusEl.setAttribute("role", "status");
+      liveStatusEl.setAttribute("aria-live", "polite");
+
+      // Only shown when this host is genuinely publishing — a room key and a
+      // viewer link on a host that failed to connect would be a lie you could
+      // send to four people.
+      if (LIVE.role === "host" && LIVE.roomKey && LIVE.enabled) {
+        const url = viewerUrlFor(LIVE.roomKey);
+        const lbl = document.createElement("span");
+        lbl.className = "roombar-label";
+        lbl.textContent = "Room";
+        const key = document.createElement("span");
+        key.className = "roombar-key";
+        key.textContent = LIVE.roomKey;
+        const lbl2 = document.createElement("span");
+        lbl2.className = "roombar-label";
+        lbl2.textContent = "Viewer link";
+        const urlEl = document.createElement("span");
+        urlEl.className = "roombar-url";
+        urlEl.textContent = url;
+        urlEl.title = url;
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "mf-btn";
+        copyBtn.textContent = "Copy link";
+        copyBtn.addEventListener("click", () => {
+          // The link is also plain selectable text above, so a browser that
+          // refuses clipboard access still leaves a way to share it.
+          const done = () => { copyBtn.textContent = "Copied"; setTimeout(() => { copyBtn.textContent = "Copy link"; }, 1500); };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(done, () => toast("Could not copy — select the link and copy it manually.", "warn"));
+          } else {
+            toast("Clipboard unavailable — select the link and copy it manually.", "warn");
+          }
+        });
+        const note = document.createElement("span");
+        note.className = "roombar-note";
+        note.textContent = "viewers are read-only";
+        roomBar.append(lbl, key, lbl2, urlEl, copyBtn, note);
+        roomBar.hidden = false;
+      }
+
       const apptabsRight = document.createElement("div");
       apptabsRight.className = "apptabs-right";
 
@@ -3053,7 +3896,17 @@
       resetBtn.className = "mf-btn";
       resetBtn.textContent = "Reset…";
 
-      apptabsRight.append(saveStatusEl, exportBtn, importBtn, importFile, resetBtn);
+      if (READONLY) {
+        // Nothing here is meaningful on a mirror: there is no local state to
+        // export, and importing or resetting would only desync this screen
+        // until the host's next publish overwrote it.
+        const badge = document.createElement("span");
+        badge.className = "viewer-badge";
+        badge.textContent = "Viewer · read-only";
+        apptabsRight.append(badge, liveStatusEl);
+      } else {
+        apptabsRight.append(liveStatusEl, saveStatusEl, exportBtn, importBtn, importFile, resetBtn);
+      }
       apptabs.append(apptabsRight);
 
       const saveBanner = document.createElement("div");
@@ -3097,6 +3950,10 @@
       }
 
       function doSave() {
+        // A viewer's screen is a projection of someone else's auction — writing
+        // it to this browser's autosave slot would leave a phone holding a
+        // half-real "saved auction" to be restored later.
+        if (READONLY) return;
         pendingSave = false;
         let json;
         try {
@@ -3124,6 +3981,7 @@
       // Debounced + deferred: a burst of actions (or a huge log) coalesces
       // into one save a moment later, off the click that triggered it.
       function scheduleSave() {
+        if (READONLY) return;
         pendingSave = true;
         renderSaveStatus();
         clearTimeout(saveTimer);
@@ -3131,6 +3989,7 @@
       }
 
       window.addEventListener("beforeunload", () => {
+        if (READONLY) return;
         if (pendingSave) { clearTimeout(saveTimer); doSave(); }
       });
 
@@ -3140,6 +3999,7 @@
       });
 
       function applyImport(obj) {
+        if (READONLY) return;
         const byId = new Map(obj.players.map(p => [String(p.id), p]));
         for (const p of ALL) {
           const s = byId.get(String(p.id));
@@ -3153,6 +4013,7 @@
         if (editPlayer) closeEdit();
         checkInvariants();
         scheduleSave();
+        LIVE.schedulePublish();
         render();
         setView("auction");
         toast(`Imported ${obj.players.length} player record${obj.players.length === 1 ? "" : "s"} and ${obj.log.length} log entr${obj.log.length === 1 ? "y" : "ies"}.`);
@@ -3217,6 +4078,7 @@
       });
 
       function performReset() {
+        if (READONLY) return;
         for (const p of ALL) { p.status = "available"; p.owner = null; p.price = null; }
         LOG.length = 0;
         logSeq = 0;
@@ -3229,6 +4091,7 @@
         lastSavedAt = null;
         renderSaveStatus();
         checkInvariants();
+        LIVE.schedulePublish();
         render();
         toast("Auction reset — every player is available and all wallets are full.");
       }
@@ -3618,6 +4481,7 @@
       }
 
       function openEdit(p) {
+        if (READONLY) return;
         if (!p || p.status !== "sold") return;
         if (SELECTED) cancelSelection();
         editPlayer = p;
@@ -3687,7 +4551,9 @@
       const logCount = document.createElement("span");
       const logHint = document.createElement("span");
       logHint.className = "log-hint";
-      logHint.textContent = "Newest first · append-only, undos are recorded rather than erasing history · ⌘/Ctrl+Z to undo";
+      logHint.textContent = READONLY
+        ? "Newest first · the last " + LIVE_CFG.logLimit + " actions, mirrored from the host"
+        : "Newest first · append-only, undos are recorded rather than erasing history · ⌘/Ctrl+Z to undo";
       logHead.append(logCount, logHint);
 
       const logList = document.createElement("div");
@@ -3709,7 +4575,64 @@
         return [];
       }
 
+      // Viewer: the host sends already-worded entries (describeEntry ran on
+      // the host side) plus the manager ids to colour them with. No prev/next
+      // snapshots cross the wire — there is nothing to undo from here.
+      function renderRemoteLog() {
+        const n = REMOTE_LOG.length;
+        logCount.textContent = n
+          ? `Last ${n} action${n > 1 ? "s" : ""}`
+          : (LIVE.hasRemote ? "No actions yet" : "Waiting for the host…");
+
+        if (!n) {
+          const e = document.createElement("div");
+          e.className = "log-empty";
+          e.textContent = LIVE.hasRemote
+            ? "Nothing has happened yet. Sales, unsold calls, edits, reassignments and undos all show up here."
+            : "Nothing received from the host yet.";
+          logList.replaceChildren(e);
+          return;
+        }
+
+        const frag = document.createDocumentFragment();
+        let alt = false;
+        for (let i = n - 1; i >= 0; i--) {
+          const e = REMOTE_LOG[i] || {};
+          const row = document.createElement("div");
+          row.className = "log-row" + (alt ? " alt" : "") + (e.undone ? " undone" : "");
+          alt = !alt;
+
+          const seq = document.createElement("span");
+          seq.className = "log-seq";
+          seq.textContent = "#" + (e.seq == null ? "?" : e.seq);
+
+          const time = document.createElement("span");
+          time.className = "log-time";
+          time.textContent = isNum(e.ts) ? new Date(e.ts).toLocaleTimeString([], { hour12: false }) : "—";
+
+          const type = document.createElement("span");
+          type.className = "log-type t-" + (e.type || "");
+          type.textContent = TYPE_LABEL[e.type] || e.type || "?";
+
+          const what = document.createElement("span");
+          what.className = "log-what";
+          for (const id of (Array.isArray(e.owners) ? e.owners : [])) {
+            const dot = document.createElement("span");
+            dot.className = "log-owner-dot";
+            const mgr = MANAGERS[id];
+            if (mgr) dot.style.background = mgr.color;
+            what.appendChild(dot);
+          }
+          what.appendChild(document.createTextNode(String(e.text || "")));
+
+          row.append(seq, time, type, what);
+          frag.appendChild(row);
+        }
+        logList.replaceChildren(frag);
+      }
+
       function renderLog() {
+        if (READONLY) { renderRemoteLog(); return; }
         const undone = LOG.filter(e => e.undoneBy != null).length;
         logCount.textContent = LOG.length
           ? `${LOG.length} action${LOG.length > 1 ? "s" : ""}${undone ? ` · ${undone} undone` : ""}`
@@ -3761,6 +4684,185 @@
         logList.replaceChildren(frag);
       }
 
+      /* ============================================================
+         LIVE MIRRORING — payload out (host), merge in (viewer), and the
+         connection status both roles read.
+         ============================================================ */
+
+      // What the host publishes. Deliberately small: this is written on every
+      // single action, and the real log alone is over 200 KB.
+      //   · per-player auction fields only, and only for players that aren't
+      //     available — the set is republished whole every time, so "absent"
+      //     unambiguously means available and 900 untouched rows cost nothing.
+      //   · the current lot as an id, not a record. Viewers have players.json.
+      //   · the last 20 log entries as finished text, for display. No prev/next
+      //     snapshots: undo is host-local and viewers have nothing to undo.
+      // Nothing derived goes over the wire — wallets, max bids, position and
+      // club counts are all recomputed viewer-side from these fields.
+      function buildLivePayload() {
+        const players = [];
+        for (const p of ALL) {
+          if (p.status === "available") continue;
+          const rec = { id: p.id, status: p.status };
+          if (p.owner != null) rec.owner = p.owner;
+          if (p.price != null) rec.price = p.price;
+          players.push(rec);
+        }
+
+        const log = [];
+        for (let i = Math.max(0, LOG.length - LIVE_CFG.logLimit); i < LOG.length; i++) {
+          const e = LOG[i];
+          log.push({
+            seq: e.seq,
+            ts: e.ts,
+            type: e.type,
+            text: describeEntry(e),
+            owners: entryOwnerIds(e),
+            undone: e.undoneBy != null
+          });
+        }
+
+        return {
+          schema: SCHEMA_VERSION,
+          lot: SELECTED ? { id: SELECTED.id } : null,
+          players,
+          log
+        };
+      }
+
+      // Viewer: merge the host's auction fields onto our own records. Every
+      // player is reset first, so a release or an undo on the host clears here
+      // too rather than leaving a ghost sale behind.
+      function applyRemoteState(snapshot) {
+        const s = snapshot && typeof snapshot === "object" ? snapshot : {};
+
+        // Firebase hands arrays back as arrays and objects as objects, and
+        // will drop an empty one entirely — normalise all three.
+        const listOf = v => Array.isArray(v) ? v.filter(Boolean)
+          : (v && typeof v === "object") ? Object.keys(v).map(k => v[k]).filter(Boolean)
+            : [];
+
+        for (const p of ALL) { p.status = "available"; p.owner = null; p.price = null; }
+
+        let unknown = 0;
+        for (const r of listOf(s.players)) {
+          if (r.id == null) continue;
+          const p = BY_ID.get(String(r.id));
+          if (!p) { unknown++; continue; }
+          const st = VALID_STATUS.has(r.status) ? r.status : "available";
+          if (st === "sold") {
+            const owner = Number.isInteger(r.owner) && MANAGERS[r.owner] ? r.owner : null;
+            const price = isNum(r.price) ? r.price : null;
+            // A half-formed sale would trip the invariant checker into a red
+            // banner on every viewer; treat it as not-yet-sold instead and let
+            // the host's next publish settle it.
+            if (owner == null || price == null) continue;
+            p.status = "sold"; p.owner = owner; p.price = price;
+          } else if (st === "unsold") {
+            p.status = "unsold";
+          }
+        }
+
+        REMOTE_LOG = listOf(s.log);
+
+        // SELECTED is what the lot panel and the wallet strip read, on both
+        // roles — the viewer just never sets it from a click.
+        const lotId = s.lot && s.lot.id != null ? String(s.lot.id) : null;
+        SELECTED = lotId ? (BY_ID.get(lotId) || null) : null;
+
+        checkInvariants();
+        render({ preserveScroll: true });
+        renderLiveStatus();
+
+        // Once, not on every snapshot — it's a setup problem, not an event.
+        if (unknown && !warnedPlayerMismatch) {
+          warnedPlayerMismatch = true;
+          toast(`Host is running a different player list — ${unknown} mirrored player${unknown === 1 ? "" : "s"} not found in this players.json.`, "warn");
+        }
+      }
+
+      /* ---- connection status ----
+         Silent staleness is the failure that matters: a phone propped up
+         across the room showing a frozen screen looks exactly like one
+         showing a live screen. So both facts are always on display — am I
+         connected, and how old is what I'm looking at — and a disconnection
+         gets a full-width bar as well as the chip. */
+
+      function agoText(ts) {
+        if (!ts) return null;
+        const secs = Math.max(0, Math.round((Date.now() - ts) / 1000));
+        if (secs < 60) return secs + "s ago";
+        const mins = Math.floor(secs / 60);
+        if (mins < 60) return mins + "m " + (secs % 60) + "s ago";
+        return Math.floor(mins / 60) + "h " + (mins % 60) + "m ago";
+      }
+
+      function clockText(ts) {
+        return ts ? new Date(ts).toLocaleTimeString([], { hour12: false }) : "never";
+      }
+
+      function setLiveStatus(kind, text, banner, bannerKind) {
+        liveStatusEl.textContent = text;
+        liveStatusEl.className = "live-status" + (kind ? " " + kind : "");
+        if (banner) {
+          liveBanner.textContent = banner;
+          liveBanner.className = "live-banner" + (bannerKind ? " " + bannerKind : "");
+          liveBanner.hidden = false;
+        } else {
+          liveBanner.hidden = true;
+        }
+      }
+
+      function renderLiveStatus() {
+        LIVE.refreshDerived();
+        const stamp = READONLY ? LIVE.lastReceiveAt : LIVE.lastPublishAt;
+        const age = agoText(stamp);
+        const seen = stamp ? `${clockText(stamp)} (${age})` : "nothing yet";
+
+        if (!LIVE.enabled) {
+          const why = LIVE.reason || (LIVE.roomKey ? "not connected" : "no room");
+          setLiveStatus("bad",
+            READONLY ? "⚠ Not connected — " + why : "⦿ Mirroring off — " + why,
+            READONLY ? "⚠ NOT CONNECTED — " + why + ". This screen is not updating." : null);
+          return;
+        }
+
+        if (!READONLY) {
+          if (LIVE.lostRoom) {
+            setLiveStatus("bad", "⚠ Room " + LIVE.roomKey + " taken over — publishing stopped",
+              "⚠ Another host has claimed room " + LIVE.roomKey + ". This tab has stopped publishing so the two don't interleave. The auction here is still saving locally — reload to take the room back once the other host is closed.");
+            return;
+          }
+          if (LIVE.publishError) {
+            setLiveStatus("bad", "⚠ Publish failed — " + LIVE.publishError + " · last sent " + seen, null);
+            return;
+          }
+          if (!LIVE.connected) {
+            setLiveStatus("bad", "⚠ Offline · last published " + seen, null);
+            return;
+          }
+          setLiveStatus("ok", "● Live · room " + LIVE.roomKey + " · published " + (age || "nothing yet"), null);
+          return;
+        }
+
+        if (!LIVE.connected) {
+          setLiveStatus("bad", "⚠ Offline · data from " + seen,
+            "⚠ DISCONNECTED — this is not live. Showing the auction as it was at " + clockText(stamp) + " (" + (age || "never received") + ").");
+          return;
+        }
+        if (!LIVE.hasRemote) {
+          setLiveStatus("pending", "● Connected · waiting for the host…", null);
+          return;
+        }
+        if (!LIVE.hostPresent) {
+          setLiveStatus("warn", "⚠ Host offline · data from " + seen,
+            "⚠ The host is not connected. This is the auction as it was at " + clockText(stamp) + " (" + (age || "unknown") + ") and it will not update until they come back.",
+            "warn");
+          return;
+        }
+        setLiveStatus("ok", "● Live · room " + LIVE.roomKey + " · updated " + (age || "just now"), null);
+      }
+
       function setView(v) {
         if (v === appView) return;
         if (v !== "auction" && SELECTED) cancelSelection();
@@ -3771,11 +4873,13 @@
         tabBtns.forEach(b => b.classList.toggle("on", b.dataset.view === v));
         if (v === "teams") renderTeams();
         if (v === "log") renderLog();
-        if (v === "auction") search.focus();
+        // Focusing the search box pops the on-screen keyboard on a phone,
+        // which is the last thing a viewer wants when they switch tabs.
+        if (v === "auction" && !READONLY) search.focus();
       }
       tabBtns[0].classList.add("on");
 
-      app.replaceChildren(saveBanner, invariantBanner, apptabs, auctionView, teamsView, logView, editOverlay, toastEl);
+      app.replaceChildren(roomBar, liveBanner, saveBanner, invariantBanner, apptabs, auctionView, teamsView, logView, editOverlay, toastEl);
 
       // Sticky group headers sit just below the real header row. Two things
       // were wrong before: (1) the measurement used the <tr>, but the sticky
@@ -3919,6 +5023,9 @@
 
       function applyHi(scroll) {
         if (hiRow) hiRow.classList.remove("hi");
+        // The highlight only means anything next to ↑↓/Enter, and a viewer
+        // has neither — an arbitrarily lit row would just read as "selected".
+        if (READONLY) { hiRow = null; return; }
         hiRow = viewList[hi] ? viewList[hi]._row : null;
         if (hiRow) {
           hiRow.classList.add("hi");
@@ -4014,6 +5121,7 @@
       function setPhase(p) { phase = p; assignBar.dataset.phase = p; }
 
       function selectPlayer(p) {
+        if (READONLY) return;      // the lot is whatever the host says it is
         if (!p) return;
         // A sold player isn't re-bid — picking one opens the edit/reassign
         // dialog instead, from wherever it was clicked.
@@ -4026,6 +5134,7 @@
         assignErr.textContent = "";
         renderAssignBar();
         renderWallets();
+        LIVE.schedulePublish();      // a new lot is on the block
         priceInput.focus();
       }
 
@@ -4093,12 +5202,18 @@
         render({ preserveScroll: true });
       }
 
+      // Both guarded because SELECTED means something different on a viewer:
+      // it is the host's current lot, not a local pick. Switching tabs or
+      // changing a filter routes through cancelSelection() — which would
+      // otherwise blank the lot panel until the host's next publish.
       function cancelSelection() {
+        if (READONLY) return;
         if (!SELECTED) return;
         endSelection(false);
       }
 
       function endSelection(clearSearch) {
+        if (READONLY) return;
         SELECTED = null;
         pendingManager = null;
         pendingPrice = null;
@@ -4113,10 +5228,12 @@
         // this, every confirm/unsold/cancel reset the highlight to row 0 and
         // dragged the whole list back toward the top mid-auction.
         render({ preserveScroll: true });
+        LIVE.schedulePublish();      // lot cleared (or replaced by the result)
         search.focus();
       }
 
       function onCardClick(i) {
+        if (READONLY) return;
         // mouse path: one click commits to that manager (validates first)
         if (!SELECTED) return;
         if (phase === "price") { commitPrice(); if (phase !== "manager") return; }
@@ -4162,7 +5279,9 @@
           if (n >= 1 && n <= MANAGERS.length) { e.preventDefault(); pickManager(n - 1); }
         }
       }
-      document.addEventListener("keydown", routeKey);
+      // Every keyboard binding below is host-only. A viewer's keyboard does
+      // nothing at all — not "does nothing useful", not registered.
+      if (!READONLY) document.addEventListener("keydown", routeKey);
 
       // View toggle — guarded against text-entry fields so it never hijacks a
       // search query or price ("Toni Kroos" types a literal "t" into search).
@@ -4171,7 +5290,7 @@
         const tag = el.tagName;
         return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
       }
-      document.addEventListener("keydown", e => {
+      if (!READONLY) document.addEventListener("keydown", e => {
         if (editPlayer) return;
         if (isTypingTarget(e.target)) return;
         if (e.key === "t" || e.key === "T") {
@@ -4187,7 +5306,7 @@
       // typing — which is why it is safe to leave unguarded by focus, and it
       // needs to be: after a sale the focus is back in the search box, which
       // is exactly the moment you reach for undo.
-      document.addEventListener("keydown", e => {
+      if (!READONLY) document.addEventListener("keydown", e => {
         if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
         if (e.key !== "z" && e.key !== "Z") return;
         if (e.shiftKey) return;              // no redo — leave ⇧⌘Z alone
@@ -4200,7 +5319,7 @@
       // open (that's the field you usually came to change), so plain digits
       // must go to it — Alt+digit is the manager picker, matched on e.code
       // because Option+1 types "¡" on a Mac.
-      document.addEventListener("keydown", e => {
+      if (!READONLY) document.addEventListener("keydown", e => {
         if (!editPlayer) return;
         if (e.key === "Escape") { e.preventDefault(); closeEdit(); return; }
         if (e.key === "Enter") { e.preventDefault(); saveEdit(); return; }
@@ -4235,13 +5354,56 @@
       releaseBtn.addEventListener("click", () => releaseSelected());
       cancelBtn.addEventListener("click", () => cancelSelection());
 
+      /* ---------- viewer-only chrome ---------- */
+
+      if (READONLY) {
+        // The lot panel and the wallet strip are what a viewer watches; the
+        // 900-row table is reference material, and on a phone it pushes both
+        // of them off the screen. Collapsed by default on a narrow viewport,
+        // one tap away on any.
+        const listToggle = document.createElement("button");
+        listToggle.type = "button";
+        listToggle.className = "mf-btn listtoggle";
+        const narrow = window.matchMedia && window.matchMedia("(max-width: 760px)").matches;
+        auctionView.classList.toggle("listcollapsed", narrow);
+        const syncToggle = () => {
+          listToggle.textContent = auctionView.classList.contains("listcollapsed") ? "Show players ▾" : "Hide players ▴";
+        };
+        listToggle.addEventListener("click", () => {
+          auctionView.classList.toggle("listcollapsed");
+          syncToggle();
+        });
+        syncToggle();
+        toolbar.appendChild(listToggle);
+
+        // Hidden rather than disabled: an assignment bar a viewer can't use is
+        // just a row of dead controls taking up the space the lot panel wants.
+        assignBar.hidden = true;
+        search.placeholder = "Search name…";
+        priceInput.disabled = true;
+        editPrice.disabled = true;
+      }
+
+      /* ---------- live wiring ---------- */
+
+      LIVE.onStatus = renderLiveStatus;
+      if (READONLY) LIVE.onRemoteState = applyRemoteState;
+      else LIVE.setPayloadBuilder(buildLivePayload);
+
+      // The status is time-relative ("published 4s ago") and a host going
+      // quiet produces no event at all, so it has to be re-rendered on a
+      // clock rather than only on change.
+      renderLiveStatus();
+      setInterval(renderLiveStatus, 1000);
+
       checkInvariants();     // baseline: the freshly loaded records must be consistent
       renderSaveStatus();
       if (restore) {
         toast(`Restored autosaved data from ${restore.savedAt ? new Date(restore.savedAt).toLocaleString() : "an earlier session"} (${LOG.length} log entr${LOG.length === 1 ? "y" : "ies"}).`);
       }
       render();
-      search.focus();
+      if (READONLY) LIVE.schedulePublish = () => { };   // belt and braces: nothing here can write
+      else { LIVE.schedulePublish(); search.focus(); }  // publish the starting position
     }
 
     /* ---------- multi-select filter (checkbox dropdown) ---------- */
