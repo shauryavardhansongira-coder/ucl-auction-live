@@ -1,3 +1,7 @@
+# Builds players.json from UEFA's fantasy feed (raw-fantasy.json).
+# NOTE: positions here are UEFA's. The auction uses positions from the
+# separate CSV source (wingers = FWD, not MID). Re-running this reverts them.
+
 import json
 
 raw = json.load(open('raw-fantasy.json'))['data']['value']['playerList']
