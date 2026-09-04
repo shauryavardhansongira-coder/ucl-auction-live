@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UCL Auction — Players</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --bg:#0f1216; --panel:#161b22; --line:#2a323d; --text:#e6edf3; --muted:#9aa7b4;
+    --accent:#4c8dff; --row2:#151a21; --hover:#1d2530; --hd:#1b2230; --err:#d9534f;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg:#f6f7f9; --panel:#ffffff; --line:#d9dee5; --text:#1a1f26; --muted:#5b6672;
+      --accent:#1f6feb; --row2:#f2f4f8; --hover:#e9eef6; --hd:#eef1f5; --err:#c9302c;
+    }
+  }
+  html, body { margin:0; height:100%; }
+  body {
+    background:var(--bg); color:var(--text);
+    font:13px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app { display:flex; flex-direction:column; height:100%; }
+
+  /* Toolbar */
+  .toolbar {
+    display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+    padding:8px; background:var(--panel); border-bottom:1px solid var(--line);
+  }
+  .toolbar input[type=search] {
+    flex:1; min-width:200px; padding:6px 10px; font-size:13px;
+    background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text);
+  }
+  .toolbar select, .mf-btn {
+    padding:6px 10px; font-size:13px; background:var(--bg);
+    border:1px solid var(--line); border-radius:6px; color:var(--text); cursor:pointer;
+  }
+  .count { color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
+
+  /* Multi-select filter */
+  .mf { position:relative; }
+  .mf-panel {
+    position:absolute; top:calc(100% + 4px); left:0; z-index:20;
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:6px; min-width:210px; max-height:340px; overflow:auto;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  .mf-panel[hidden] { display:none; }
+  .mf-quick { display:flex; gap:12px; padding:2px 6px 6px; border-bottom:1px solid var(--line); margin-bottom:4px; }
+  .mf-quick a { color:var(--accent); cursor:pointer; font-size:12px; }
+  .mf-panel label {
+    display:flex; gap:8px; align-items:center; padding:4px 6px;
+    border-radius:5px; cursor:pointer; white-space:nowrap;
+  }
+  .mf-panel label:hover { background:var(--hover); }
+
+  /* Table */
+  .main { flex:1; overflow:auto; }
+  table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  thead th {
+    position:sticky; top:0; z-index:5; background:var(--hd);
+    text-align:left; font-weight:600; font-size:11px; letter-spacing:.03em;
+    text-transform:uppercase; color:var(--muted);
+    padding:6px 8px; border-bottom:1px solid var(--line); cursor:default;
+  }
+  tbody td {
+    padding:3px 8px; border-bottom:1px solid var(--line);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  tbody tr.r:hover { background:var(--hover); }
+  tbody tr.r.alt { background:var(--row2); }
+  tr.grp td {
+    position:sticky; top:var(--th-h, 28px); z-index:4;
+    background:var(--panel); color:var(--text);
+    font-weight:700; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+    padding:5px 8px; border-bottom:1px solid var(--line);
+  }
+  th.num, td.num, td.val { text-align:right; font-variant-numeric:tabular-nums; }
+  td.val { font-weight:700; }
+
+  .ph {
+    width:26px; height:26px; border-radius:50%; object-fit:cover;
+    background:var(--bg); display:block;
+  }
+  .ph-txt {
+    display:flex; width:26px; height:26px; border-radius:50%;
+    align-items:center; justify-content:center;
+    background:var(--bg); border:1px solid var(--line);
+    font-size:9px; font-weight:700; color:var(--muted);
+  }
+  .club { display:flex; align-items:center; gap:6px; overflow:hidden; }
+  .cr { width:16px; height:16px; object-fit:contain; flex:none; }
+  .cr-txt { font-size:10px; font-weight:700; color:var(--muted); flex:none; min-width:16px; }
+  .club .nm { overflow:hidden; text-overflow:ellipsis; }
+  .pos {
+    display:inline-block; padding:1px 6px; border-radius:4px;
+    font-size:10px; font-weight:700; color:#fff;
+  }
+
+  .empty { padding:40px; text-align:center; color:var(--muted); }
+  .err {
+    margin:24px auto; max-width:820px; background:var(--panel);
+    border:1px solid var(--err); border-left:4px solid var(--err);
+    border-radius:8px; padding:16px 18px;
+  }
+  .err h2 { margin:0 0 8px; font-size:15px; color:var(--err); }
+  .err p { margin:6px 0; }
+  .err ul { margin:10px 0 0; padding-left:18px; max-height:360px; overflow:auto; }
+  .err li { margin:2px 0; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   CONFIG — auction values filled in later. Nothing below is
+   hardcoded against these; the list works with placeholders.
+   ============================================================ */
+const CONFIG = {
+  managers: ["", "", "", ""],
+  startingBudget: 0,
+  squadSize: 0,
+  minBid: 0,
+  positionOrder: ["GK", "DEF", "MID", "FWD"],
+  positionLimits: { GK: [0,0], DEF: [0,0], MID: [0,0], FWD: [0,0] },
+  maxPerClub: 0,
+  imageUrls: {
+    player: "https://img.uefa.com/imgml/TP/players/1/2027/324x324/{id}.jpg",
+    club: "https://img.uefa.com/imgml/TP/teams/logos/140x140/{id}.png"
+  }
+};
+
+/* ---------- helpers ---------- */
+
+// Case- and accent-insensitive fold (so "Kovacic" matches "Kovačić").
+function norm(s) {
+  return (s == null ? "" : String(s))
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
+
+// Build an image URL from a CONFIG template, or null if the template
+// (or the id) is missing — caller then renders the text fallback.
+function imgUrl(tpl, id) {
+  if (!tpl || id == null || id === "") return null;
+  return tpl.replace("{id}", encodeURIComponent(id));
+}
+
+// Stable hue per position string — no position names hardcoded.
+function hueOf(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+
+function isNum(v) { return typeof v === "number" && !isNaN(v); }
+function fmtInt(v) { return isNum(v) ? String(v) : "·"; }
+function fmtVal(v) { return isNum(v) ? v.toFixed(1) : "·"; }
+
+const app = document.getElementById("app");
+
+/* ---------- error screen ---------- */
+
+function showError(title, lines) {
+  app.replaceChildren();
+  const box = document.createElement("div");
+  box.className = "err";
+  const h = document.createElement("h2");
+  h.textContent = title;
+  box.appendChild(h);
+  const ul = document.createElement("ul");
+  for (const ln of lines) {
+    const li = document.createElement("li");
+    li.textContent = ln;
+    ul.appendChild(li);
+  }
+  box.appendChild(ul);
+  app.appendChild(box);
+}
+
+/* ---------- load ---------- */
+
+fetch("players.json", { cache: "no-store" })
+  .then(r => { if (!r.ok) throw new Error("HTTP " + r.status + " fetching players.json"); return r.json(); })
+  .then(init)
+  .catch(err => {
+    showError("Could not load players.json", [
+      String((err && err.message) || err),
+      "If you opened this file directly (file://), the browser blocks local fetch.",
+      "Serve this folder over HTTP instead, e.g.:  python3 -m http.server",
+      "then open  http://localhost:8000/index.html"
+    ]);
+  });
+
+/* ---------- validation ---------- */
+
+const REQUIRED = ["id", "name", "club", "position", "value"];
+
+function validate(data) {
+  if (!Array.isArray(data)) return ["players.json is not a JSON array."];
+  const problems = [];
+  data.forEach((p, i) => {
+    const missing = REQUIRED.filter(k => {
+      const v = p == null ? undefined : p[k];
+      if (k === "value") return !isNum(v);
+      return typeof v !== "string" || v.trim() === "";
+    });
+    if (missing.length) {
+      const id = p && p.id ? p.id : "?";
+      const nm = p && p.name ? p.name : "?";
+      problems.push(`Row ${i} (id ${id}, name "${nm}"): missing or invalid — ${missing.join(", ")}`);
+    }
+  });
+  return problems;
+}
+
+/* ---------- init ---------- */
+
+function init(data) {
+  const problems = validate(data);
+  if (problems.length) {
+    const shown = problems.slice(0, 60);
+    if (problems.length > 60) shown.push(`…and ${problems.length - 60} more`);
+    showError(`players.json failed validation — ${problems.length} problem${problems.length > 1 ? "s" : ""}`, shown);
+    return;
+  }
+  buildUI(data);
+}
+
+/* ============================================================
+   UI
+   ============================================================ */
+
+function buildUI(ALL) {
+  /* precompute per-record search/sort keys (records themselves untouched) */
+  ALL.forEach(p => {
+    p._s = norm((p.name || "") + " " + (p.fullName || ""));
+    p._n = norm(p.name || "");
+  });
+
+  const AVAIL = ALL.filter(p => p.status === "available").length;
+
+  /* positions: CONFIG.positionOrder drives display order only;
+     anything present in the data but not listed is appended. */
+  const dataPos = [...new Set(ALL.map(p => p.position))];
+  const ORDERED_POS = [
+    ...CONFIG.positionOrder.filter(p => dataPos.includes(p)),
+    ...dataPos.filter(p => !CONFIG.positionOrder.includes(p)).sort((a, b) => a.localeCompare(b))
+  ];
+  const POS_IDX = {};
+  ORDERED_POS.forEach((p, i) => { POS_IDX[p] = i; });
+
+  /* clubs derived from the data */
+  const CLUBS = [...new Set(ALL.map(p => p.club))].sort((a, b) => a.localeCompare(b));
+
+  /* which optional numeric columns have any real (non-zero) data */
+  const OPT = [
+    { key: "value",   label: "Val", title: "UEFA fantasy value" },
+    { key: "points",  label: "Pts", title: "Last season — points" },
+    { key: "goals",   label: "G",   title: "Last season — goals" },
+    { key: "assists", label: "A",   title: "Last season — assists" },
+    { key: "mins",    label: "Min", title: "Last season — minutes" }
+  ];
+  const hasData = key => ALL.some(p => isNum(p[key]) && p[key] !== 0);
+
+  /* column model for the table */
+  const COLS = [
+    { key: "photo",    label: "",     w: "38px",  render: photoCell },
+    { key: "name",     label: "Name", w: "",      render: nameCell },
+    { key: "club",     label: "Club", w: "170px", render: clubCell },
+    { key: "position", label: "Pos",  w: "54px",  render: posCell }
+  ];
+  for (const o of OPT) {
+    if (!hasData(o.key)) continue;
+    const width = o.key === "value" || o.key === "points" || o.key === "mins" ? "52px" : "38px";
+    COLS.push({
+      key: o.key, label: o.label, title: o.title, w: width, num: true,
+      render: p => o.key === "value" ? fmtVal(p.value) : fmtInt(p[o.key])
+    });
+  }
+  const NCOL = COLS.length;
+
+  /* ---------- cell renderers ---------- */
+
+  function textFallback(p) {
+    const s = document.createElement("span");
+    s.className = "ph-txt";
+    s.textContent = p.clubCode || norm(p.club).slice(0, 3).toUpperCase();
+    return s;
+  }
+
+  function photoCell(p) {
+    const photoU = imgUrl(CONFIG.imageUrls.player, p.id);
+    const crestU = imgUrl(CONFIG.imageUrls.club, p.clubId);
+
+    if (photoU) {
+      const img = new Image(26, 26);
+      img.className = "ph";
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.referrerPolicy = "no-referrer";
+      img.alt = "";
+      img.onerror = function () {
+        this.onerror = null;               // stop loops before swapping
+        if (crestU) {
+          const c = new Image(26, 26);
+          c.className = "ph";
+          c.loading = "lazy";
+          c.referrerPolicy = "no-referrer";
+          c.alt = "";
+          c.onerror = function () { this.onerror = null; this.replaceWith(textFallback(p)); };
+          c.src = crestU;
+          this.replaceWith(c);
+        } else {
+          this.replaceWith(textFallback(p));
+        }
+      };
+      img.src = photoU;
+      return img;
+    }
+    if (crestU) {
+      const c = new Image(26, 26);
+      c.className = "ph";
+      c.loading = "lazy";
+      c.referrerPolicy = "no-referrer";
+      c.alt = "";
+      c.onerror = function () { this.onerror = null; this.replaceWith(textFallback(p)); };
+      c.src = crestU;
+      return c;
+    }
+    return textFallback(p);
+  }
+
+  function nameCell(p) {
+    const s = document.createElement("span");
+    s.textContent = p.name;
+    if (p.fullName && p.fullName !== p.name) s.title = p.fullName;
+    return s;
+  }
+
+  function clubCell(p) {
+    const wrap = document.createElement("div");
+    wrap.className = "club";
+    const crestU = imgUrl(CONFIG.imageUrls.club, p.clubId);
+    if (crestU) {
+      const i = new Image(16, 16);
+      i.className = "cr";
+      i.loading = "lazy";
+      i.referrerPolicy = "no-referrer";
+      i.alt = "";
+      i.onerror = function () {
+        this.onerror = null;
+        const s = document.createElement("span");
+        s.className = "cr-txt";
+        s.textContent = p.clubCode || "";
+        this.replaceWith(s);
+      };
+      i.src = crestU;
+      wrap.appendChild(i);
+    } else {
+      const s = document.createElement("span");
+      s.className = "cr-txt";
+      s.textContent = p.clubCode || "";
+      wrap.appendChild(s);
+    }
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = p.club;
+    wrap.appendChild(nm);
+    return wrap;
+  }
+
+  function posCell(p) {
+    const b = document.createElement("span");
+    b.className = "pos";
+    b.textContent = p.position;
+    b.style.background = `hsl(${hueOf(p.position)} 52% 40%)`;
+    return b;
+  }
+
+  /* ---------- build one <tr> per record, once ---------- */
+
+  for (const p of ALL) {
+    const tr = document.createElement("tr");
+    tr.className = "r";
+    for (const c of COLS) {
+      const td = document.createElement("td");
+      if (c.num) td.className = c.key === "value" ? "val" : "num";
+      const out = c.render(p);
+      if (out instanceof Node) td.appendChild(out);
+      else td.textContent = out;
+      tr.appendChild(td);
+    }
+    p._row = tr;
+  }
+
+  /* ---------- toolbar ---------- */
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "toolbar";
+
+  const search = document.createElement("input");
+  search.type = "search";
+  search.placeholder = "Search name…  (accent-insensitive)";
+  search.autocomplete = "off";
+  search.spellcheck = false;
+
+  const clubFilter = multiFilter("Club", CLUBS);
+  const posFilter = multiFilter("Pos", ORDERED_POS);
+
+  const sortSel = document.createElement("select");
+  const sortOpts = [["group", "Grouped by position"]];
+  if (COLS.some(c => c.key === "value"))  sortOpts.push(["value", "Value ↓"]);
+  if (COLS.some(c => c.key === "points")) sortOpts.push(["points", "Points ↓"]);
+  sortOpts.push(["name", "Name ↑"]);
+  for (const [v, t] of sortOpts) {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = "Sort: " + t;
+    sortSel.appendChild(o);
+  }
+
+  const count = document.createElement("span");
+  count.className = "count";
+
+  toolbar.append(search, clubFilter.el, posFilter.el, sortSel, count);
+
+  /* ---------- table shell ---------- */
+
+  const main = document.createElement("div");
+  main.className = "main";
+  const table = document.createElement("table");
+
+  const colgroup = document.createElement("colgroup");
+  for (const c of COLS) {
+    const col = document.createElement("col");
+    if (c.w) col.style.width = c.w;
+    colgroup.appendChild(col);
+  }
+  table.appendChild(colgroup);
+
+  const thead = document.createElement("thead");
+  const htr = document.createElement("tr");
+  for (const c of COLS) {
+    const th = document.createElement("th");
+    th.textContent = c.label;
+    if (c.num) th.className = "num";
+    if (c.title) th.title = c.title;
+    htr.appendChild(th);
+  }
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  table.appendChild(tbody);
+  main.appendChild(table);
+
+  app.replaceChildren(toolbar, main);
+
+  // sticky group headers sit just below the real header row
+  document.documentElement.style.setProperty("--th-h", thead.offsetHeight + "px");
+
+  /* ---------- render ---------- */
+
+  function render() {
+    const q = norm(search.value.trim());
+    const cs = clubFilter.selected;
+    const ps = posFilter.selected;
+
+    const list = ALL.filter(p =>
+      p.status === "available" &&
+      (cs.size === 0 || cs.has(p.club)) &&
+      (ps.size === 0 || ps.has(p.position)) &&
+      (q === "" || p._s.includes(q))
+    );
+
+    const mode = sortSel.value;
+    const byName = (a, b) => a._n.localeCompare(b._n);
+    if (mode === "group") {
+      list.sort((a, b) =>
+        (POS_IDX[a.position] - POS_IDX[b.position]) ||
+        ((b.value || 0) - (a.value || 0)) ||
+        byName(a, b));
+    } else if (mode === "value") {
+      list.sort((a, b) => ((b.value || 0) - (a.value || 0)) || byName(a, b));
+    } else if (mode === "points") {
+      list.sort((a, b) => ((b.points || 0) - (a.points || 0)) || byName(a, b));
+    } else {
+      list.sort(byName);
+    }
+
+    let groupCount = null;
+    if (mode === "group") {
+      groupCount = {};
+      for (const p of list) groupCount[p.position] = (groupCount[p.position] || 0) + 1;
+    }
+
+    const frag = document.createDocumentFragment();
+    let alt = false;
+    let curPos = null;
+    for (const p of list) {
+      if (mode === "group" && p.position !== curPos) {
+        curPos = p.position;
+        alt = false;
+        const gtr = document.createElement("tr");
+        gtr.className = "grp";
+        const gtd = document.createElement("td");
+        gtd.colSpan = NCOL;
+        gtd.textContent = `${curPos} · ${groupCount[curPos]}`;
+        gtr.appendChild(gtd);
+        frag.appendChild(gtr);
+      }
+      p._row.classList.toggle("alt", alt);
+      alt = !alt;
+      frag.appendChild(p._row);
+    }
+
+    tbody.replaceChildren(frag);
+
+    if (!list.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.className = "empty";
+      td.colSpan = NCOL;
+      td.textContent = q || cs.size || ps.size ? "No players match the current filters." : "No available players.";
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+
+    count.textContent = `${list.length.toLocaleString()} / ${AVAIL.toLocaleString()} available`;
+  }
+
+  /* ---------- wiring ---------- */
+
+  search.addEventListener("input", render);
+  sortSel.addEventListener("change", render);
+  search.addEventListener("keydown", e => { if (e.key === "Escape") { search.value = ""; render(); } });
+
+  clubFilter.onChange = render;
+  posFilter.onChange = render;
+
+  render();
+  search.focus();
+}
+
+/* ---------- multi-select filter (checkbox dropdown) ---------- */
+
+function multiFilter(label, values) {
+  const api = { selected: new Set(), onChange: null };
+
+  const wrap = document.createElement("div");
+  wrap.className = "mf";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "mf-btn";
+
+  const panel = document.createElement("div");
+  panel.className = "mf-panel";
+  panel.hidden = true;
+
+  const quick = document.createElement("div");
+  quick.className = "mf-quick";
+  const allLink = document.createElement("a");
+  allLink.textContent = "All";
+  const clrLink = document.createElement("a");
+  clrLink.textContent = "Clear";
+  quick.append(allLink, clrLink);
+  panel.appendChild(quick);
+
+  const boxes = [];
+  for (const v of values) {
+    const l = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = v;
+    const sp = document.createElement("span");
+    sp.textContent = v;
+    l.append(cb, sp);
+    panel.appendChild(l);
+    boxes.push(cb);
+    cb.addEventListener("change", () => {
+      if (cb.checked) api.selected.add(v); else api.selected.delete(v);
+      syncLabel();
+      if (api.onChange) api.onChange();
+    });
+  }
+
+  function syncLabel() {
+    btn.textContent = api.selected.size ? `${label} (${api.selected.size}) ▾` : `${label} ▾`;
+  }
+  function setAll(on) {
+    api.selected.clear();
+    for (const cb of boxes) {
+      cb.checked = on;
+      if (on) api.selected.add(cb.value);
+    }
+    syncLabel();
+    if (api.onChange) api.onChange();
+  }
+
+  allLink.addEventListener("click", () => setAll(true));
+  clrLink.addEventListener("click", () => setAll(false));
+
+  btn.addEventListener("click", e => {
+    e.stopPropagation();
+    document.querySelectorAll(".mf-panel").forEach(p => { if (p !== panel) p.hidden = true; });
+    panel.hidden = !panel.hidden;
+  });
+  panel.addEventListener("click", e => e.stopPropagation());
+  document.addEventListener("click", () => { panel.hidden = true; });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") panel.hidden = true; });
+
+  syncLabel();
+  wrap.append(btn, panel);
+  api.el = wrap;
+  return api;
+}
+</script>
+</body>
+</html>
