@@ -45,8 +45,12 @@
       /* Neutral selection/focus marker — keyboard-highlighted row, a
        manager card mid-pick. Deliberately not any CONFIG manager colour
        (nor --accent, which happens to equal one) so a selection ring or
-       edge never reads as "that manager's colour". */
+       edge never reads as "that manager's colour". --select is light, so
+       the keyboard-highlighted row (a full fill, not just an edge) needs
+       its own dark text pair to stay AA on top of it. */
       --select: #c7d0da;
+      --select-text: var(--bg);
+      --select-text-2: #3a4149;
 
       /* legacy aliases — kept so every existing rule below (panel/line/
        row2/hover/hd/muted) still resolves through the token system
@@ -809,10 +813,13 @@
       box-shadow: 0 0 0 1px var(--select) inset;
     }
 
+    /* Sized to fill most of the card's own content height (driven by the
+     info column beside it — name, max bid, meta) rather than the card's
+     small original photo padding — so the card's outer box doesn't grow. */
     .lot-mgr-photo {
-      width: 46px;
-      height: 46px;
-      border-radius: 8px;
+      width: 60px;
+      height: 60px;
+      border-radius: 9px;
       object-fit: cover;
       background: var(--bg);
       display: block;
@@ -821,13 +828,13 @@
 
     .lot-mgr-initials {
       display: flex;
-      width: 46px;
-      height: 46px;
-      border-radius: 8px;
+      width: 60px;
+      height: 60px;
+      border-radius: 9px;
       flex: none;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
+      font-size: 20px;
       font-weight: 800;
       color: var(--on-color);
     }
@@ -1092,7 +1099,7 @@
     }
 
     tbody td {
-      padding: 1px 8px;
+      padding: 2px 8px;
       border-bottom: 1px solid var(--line);
       white-space: nowrap;
       overflow: hidden;
@@ -1102,7 +1109,6 @@
     tbody tr.r {
       cursor: pointer;
       background: var(--bg);
-      line-height: 1.15;
     }
 
     tbody tr.r:hover {
@@ -1148,17 +1154,32 @@
       box-shadow: inset 3px 0 0 var(--warn);
     }
 
-    /* Keyboard highlight — a neutral selection treatment, never a manager
-     colour: a lighter surface plus a left edge in --select. Declared after
-     sold/unsold above so wherever your cursor lands stays fully legible,
-     not dimmed or tinted by either of those states. */
+    /* Keyboard highlight — a full-row fill, never a manager colour: light
+     neutral grey (--select) with its own dark text pair, not a dimmed
+     accent. Declared after sold/unsold above so wherever your cursor
+     lands stays fully legible, overriding both of those states rather
+     than blending with them. The position pill needs no override here —
+     it paints its own opaque hue background and keeps its own on-color
+     text (a direct rule on the pill itself, so it's untouched by this
+     row-level colour flip) regardless of what's behind it. */
     tbody tr.r.hi td {
-      background: var(--surface-3);
-      color: var(--text);
+      background: var(--select);
+      color: var(--select-text);
     }
 
-    tbody tr.r.hi td:first-child {
-      box-shadow: inset 3px 0 0 var(--select);
+    tbody tr.r.hi .mark,
+    tbody tr.r.hi.soldrow .mark.sold,
+    tbody tr.r.hi.unsoldrow .mark.unsold,
+    tbody tr.r.hi .cr-txt {
+      color: var(--select-text-2);
+    }
+
+    tbody tr.r.hi.soldrow .ph,
+    tbody tr.r.hi.soldrow .ph-txt,
+    tbody tr.r.hi.soldrow .cr,
+    tbody tr.r.hi.soldrow .cr-txt,
+    tbody tr.r.hi.soldrow .pos {
+      opacity: 1;
     }
 
     tr.grp td {
@@ -1197,8 +1218,8 @@
     }
 
     .ph {
-      width: 18px;
-      height: 18px;
+      width: 26px;
+      height: 26px;
       border-radius: 50%;
       object-fit: cover;
       background: var(--bg);
@@ -1207,14 +1228,14 @@
 
     .ph-txt {
       display: flex;
-      width: 18px;
-      height: 18px;
+      width: 26px;
+      height: 26px;
       border-radius: 50%;
       align-items: center;
       justify-content: center;
       background: var(--bg);
       border: 1px solid var(--line);
-      font-size: 7px;
+      font-size: 9px;
       font-weight: 700;
       color: var(--muted);
     }
@@ -1750,12 +1771,12 @@
         { name: "Savya", photo: "assets/managers/3.jpeg", color: "#b47ee8" },
         { name: "Shauryavardhan", photo: "assets/managers/4.jpeg", color: "#2fb8ac" }
       ],
-      startingBudget: 200,
-      squadSize: 15,
+      startingBudget: 1000,
+      squadSize: 20,
       minBid: 1,
       positionOrder: ["GK", "DEF", "MID", "FWD"],
-      positionLimits: { GK: [1, 2], DEF: [3, 5], MID: [3, 5], FWD: [2, 4] },
-      maxPerClub: 3,
+      positionLimits: { GK: [1, 2], DEF: [3, 7], MID: [3, 7], FWD: [2, 6] },
+      maxPerClub: 4,
       imageUrls: {
         player: "https://img.uefa.com/imgml/TP/players/1/2027/324x324/{id}.jpg",
         club: "https://img.uefa.com/imgml/TP/teams/logos/140x140/{id}.png"
@@ -2358,7 +2379,7 @@
 
       /* column model for the table */
       const COLS = [
-        { key: "photo", label: "", w: "34px", render: photoCell },
+        { key: "photo", label: "", w: "42px", render: photoCell },
         { key: "name", label: "Name", w: "180px", render: nameCell },
         { key: "club", label: "Club", w: "170px", render: clubCell },
         { key: "position", label: "Pos", w: "54px", render: posCell }
@@ -2372,10 +2393,11 @@
         });
       }
       // Every column above is a tight, explicit width so name/club/position/
-      // stats sit close together as one cluster instead of name eating all
-      // the slack — except the last, left unset so it (not name) absorbs
-      // whatever width is left over in a fixed-layout table.
-      COLS[COLS.length - 1].w = "";
+      // stats sit close together as one cluster and end with Min, not a gap
+      // before it. A trailing spacer column (no label, no data) absorbs
+      // whatever width is left over in this fixed-layout table instead —
+      // the slack lands past the last real column, not inside one of them.
+      COLS.push({ key: "spacer", label: "", w: "", render: () => "" });
       const NCOL = COLS.length;
 
       /* ---------- cell renderers ---------- */
@@ -2392,7 +2414,7 @@
         const crestU = imgUrl(CONFIG.imageUrls.club, p.clubId);
 
         if (photoU) {
-          const img = new Image(18, 18);
+          const img = new Image(26, 26);
           img.className = "ph";
           img.loading = "lazy";
           img.decoding = "async";
@@ -2401,7 +2423,7 @@
           img.onerror = function () {
             this.onerror = null;               // stop loops before swapping
             if (crestU) {
-              const c = new Image(18, 18);
+              const c = new Image(26, 26);
               c.className = "ph";
               c.loading = "lazy";
               c.referrerPolicy = "no-referrer";
@@ -2417,7 +2439,7 @@
           return img;
         }
         if (crestU) {
-          const c = new Image(18, 18);
+          const c = new Image(26, 26);
           c.className = "ph";
           c.loading = "lazy";
           c.referrerPolicy = "no-referrer";
