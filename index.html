@@ -224,6 +224,41 @@
       color: var(--muted);
     }
 
+    /* Persistence controls — save status + export/import/reset, always visible
+     regardless of which app view (auction/teams/log) is showing. */
+    .apptabs-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .save-status {
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .save-status.ok {
+      color: var(--ok);
+      font-weight: 600;
+    }
+
+    .save-status.pending {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .save-status.bad {
+      color: var(--err);
+      font-weight: 700;
+    }
+
+    .save-banner {
+      background: var(--err);
+    }
+
     .auctionview {
       flex: 1;
       min-height: 0;
@@ -1578,6 +1613,144 @@
     function fmtVal(v) { return isNum(v) ? v.toFixed(1) : "·"; }
     function fmtMoney(v) { return isNum(v) ? String(v) : "·"; }
 
+    /* ============================================================
+       PERSISTENCE — shared helpers used both before the main UI
+       exists (validating/prompting about autosaved data found on
+       load) and from inside it (export / import / reset). Nothing
+       here touches the player records directly; state shape only.
+       ============================================================ */
+
+    const STORAGE_KEY = "uclAuction.state.v1";
+    const SCHEMA_VERSION = 1;
+    const VALID_STATUS = new Set(["available", "sold", "unsold"]);
+
+    // Same shape is used for autosave persistence and for export/import
+    // files: { schema, savedAt, players: [...], log: [...], config? }.
+    // Only id/status/owner/price are ever trusted off of `players` —
+    // everything else about a player comes fresh from players.json.
+    function validateStateShape(obj) {
+      const errs = [];
+      if (!obj || typeof obj !== "object" || Array.isArray(obj)) { errs.push("Not a JSON object."); return errs; }
+      if (!Array.isArray(obj.players)) errs.push('Missing or invalid "players" array.');
+      if (!Array.isArray(obj.log)) errs.push('Missing or invalid "log" array.');
+      if (errs.length) return errs;
+      if (!obj.players.length) errs.push('"players" array is empty.');
+      const seen = new Set();
+      obj.players.forEach((p, i) => {
+        if (!p || typeof p !== "object") { errs.push(`players[${i}] is not an object.`); return; }
+        if (p.id == null || p.id === "") { errs.push(`players[${i}] is missing an id.`); return; }
+        const key = String(p.id);
+        if (seen.has(key)) errs.push(`players[${i}]: duplicate id ${key}.`);
+        seen.add(key);
+        if (!VALID_STATUS.has(p.status)) { errs.push(`players[${i}] (id ${key}): invalid status ${JSON.stringify(p.status)}.`); return; }
+        if (p.status === "sold") {
+          if (!isNum(p.price)) errs.push(`players[${i}] (id ${key}): sold but price is not a number.`);
+          if (!(Number.isInteger(p.owner) && p.owner >= 0 && p.owner < CONFIG.managers.length)) {
+            errs.push(`players[${i}] (id ${key}): sold but owner ${JSON.stringify(p.owner)} is not a valid manager index (0–${CONFIG.managers.length - 1}).`);
+          }
+        } else {
+          if (p.owner != null) errs.push(`players[${i}] (id ${key}): ${p.status} but has an owner set.`);
+          if (p.price != null) errs.push(`players[${i}] (id ${key}): ${p.status} but has a price set.`);
+        }
+      });
+      obj.log.forEach((e, i) => {
+        if (!e || typeof e !== "object" || typeof e.seq !== "number" || typeof e.type !== "string" ||
+          e.pid == null || !e.prev || !e.next) {
+          errs.push(`log[${i}] is missing required fields.`);
+        }
+      });
+      return errs;
+    }
+
+    function idSetOf(players) { return new Set(players.map(p => String(p.id))); }
+    function setsEqual(a, b) { return a.size === b.size && [...a].every(x => b.has(x)); }
+
+    function readLocalStorageRaw() {
+      try { return { ok: true, raw: localStorage.getItem(STORAGE_KEY) }; }
+      catch (e) { return { ok: false, error: e }; }
+    }
+
+    function jsonReplacer(k, v) { return typeof k === "string" && k.startsWith("_") ? undefined : v; }
+
+    function downloadText(text, filename, mime) {
+      const blob = new Blob([text], { type: mime || "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function downloadJSON(obj, filename) {
+      downloadText(JSON.stringify(obj, jsonReplacer, 2), filename, "application/json");
+    }
+
+    function tsForFilename(d) {
+      const p = n => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+    }
+    function exportFilename() { return `auction-export-${tsForFilename(new Date())}.json`; }
+    function backupFilename() { return `auction-backup-${tsForFilename(new Date())}.json`; }
+
+    // Minimal generic confirm/prompt dialog, reused for every persistence
+    // decision (corrupt autosave, mismatched restore, invalid/mismatched
+    // import, reset). Built fresh each call and mounted on <body> — so it
+    // works even before the main UI exists, and never fights app.replaceChildren.
+    function buildConfirmDialog() {
+      const overlay = document.createElement("div");
+      overlay.className = "editoverlay";
+      const dialog = document.createElement("div");
+      dialog.className = "editdialog";
+      dialog.setAttribute("role", "dialog");
+      dialog.setAttribute("aria-modal", "true");
+      const head = document.createElement("div");
+      head.className = "edit-head";
+      const headInfo = document.createElement("div");
+      headInfo.className = "edit-head-info";
+      const title = document.createElement("div");
+      title.className = "edit-title";
+      const sub = document.createElement("div");
+      sub.className = "edit-sub";
+      headInfo.append(title, sub);
+      head.append(headInfo);
+      const body = document.createElement("div");
+      body.className = "edit-body";
+      const foot = document.createElement("div");
+      foot.className = "edit-foot";
+      dialog.append(head, body, foot);
+      overlay.appendChild(dialog);
+      return { overlay, title, sub, body, foot };
+    }
+
+    // buttons: [{ label, kind: "primary"|"danger"|undefined, onClick }]
+    // No backdrop-click / Escape dismissal — these dialogs exist specifically
+    // to force an explicit choice, never a silent default.
+    function showConfirm({ title, sub, lines, buttons }) {
+      const { overlay, title: t, sub: s, body, foot } = buildConfirmDialog();
+      t.textContent = title;
+      if (sub) s.textContent = sub; else s.remove();
+      for (const ln of (lines || [])) {
+        const p = document.createElement("div");
+        p.textContent = ln;
+        p.style.marginBottom = "6px";
+        body.appendChild(p);
+      }
+      function close() { overlay.remove(); }
+      for (const b of buttons) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = b.label;
+        if (b.kind) btn.className = b.kind;
+        btn.addEventListener("click", () => { close(); if (b.onClick) b.onClick(); });
+        foot.appendChild(btn);
+      }
+      document.body.appendChild(overlay);
+      return close;
+    }
+
     const app = document.getElementById("app");
 
     /* ---------- error screen ---------- */
@@ -1645,14 +1818,59 @@
         showError(`players.json failed validation — ${problems.length} problem${problems.length > 1 ? "s" : ""}`, shown);
         return;
       }
-      buildUI(data);
+
+      const rd = readLocalStorageRaw();
+      if (!rd.ok || !rd.raw) { buildUI(data, null); return; }
+
+      let saved = null, parseErr = null;
+      try { saved = JSON.parse(rd.raw); } catch (e) { parseErr = e; }
+
+      const shapeErrs = saved ? validateStateShape(saved) : [String((parseErr && parseErr.message) || parseErr || "Could not parse saved data.")];
+      if (shapeErrs.length) {
+        showConfirm({
+          title: "Saved auction data could not be read",
+          sub: "Found autosaved data in this browser, but it's corrupted or in an unexpected format. Starting fresh.",
+          lines: [...shapeErrs.slice(0, 8), shapeErrs.length > 8 ? `…and ${shapeErrs.length - 8} more` : null,
+            "You can download the raw saved text first in case it's manually recoverable."].filter(Boolean),
+          buttons: [
+            { label: "Download raw backup, then continue", onClick: () => { downloadText(rd.raw, backupFilename(), "application/json"); buildUI(data, null); } },
+            { label: "Continue without backup", kind: "danger", onClick: () => buildUI(data, null) }
+          ]
+        });
+        return;
+      }
+
+      const currentIds = idSetOf(data);
+      const savedIds = idSetOf(saved.players);
+      if (setsEqual(currentIds, savedIds)) { buildUI(data, saved); return; }
+
+      showConfirm({
+        title: "Saved data doesn't match this player list",
+        sub: "The autosaved auction in this browser was built from a different players.json (a different player set) than the one just loaded — likely a different season or export. It will not be merged.",
+        lines: [`Saved data: ${saved.players.length} players, ${saved.log.length} log entries, last saved ${saved.savedAt ? new Date(saved.savedAt).toLocaleString() : "at an unknown time"}.`],
+        buttons: [
+          {
+            label: "Export saved data, then continue", kind: "primary", onClick: () => {
+              downloadJSON(saved, backupFilename());
+              try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* nothing more we can do */ }
+              buildUI(data, null);
+            }
+          },
+          {
+            label: "Discard saved data and continue", kind: "danger", onClick: () => {
+              try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* nothing more we can do */ }
+              buildUI(data, null);
+            }
+          }
+        ]
+      });
     }
 
     /* ============================================================
        UI
        ============================================================ */
 
-    function buildUI(ALL) {
+    function buildUI(ALL, restore) {
       /* precompute per-record search/sort keys (records themselves untouched) */
       ALL.forEach(p => {
         p._s = norm((p.name || "") + " " + (p.fullName || ""));
@@ -1723,6 +1941,20 @@
       const LOG = [];
       let logSeq = 0;
 
+      // Apply restored state (autosave found on load, or an accepted import)
+      // straight onto the freshly loaded records — only status/owner/price
+      // are trusted; everything else (name, club, value…) stays whatever
+      // players.json says. Every derived figure is then recomputed as usual.
+      if (restore) {
+        const byId = new Map(restore.players.map(p => [String(p.id), p]));
+        for (const p of ALL) {
+          const s = byId.get(String(p.id));
+          if (s) { p.status = s.status; p.owner = s.owner; p.price = s.price; }
+        }
+        for (const e of restore.log) LOG.push(e);
+        logSeq = LOG.reduce((m, e) => Math.max(m, Number(e.seq) || 0), 0);
+      }
+
       function snapOf(p) {
         return { status: p.status, owner: p.owner, price: p.price };
       }
@@ -1755,6 +1987,7 @@
         };
         LOG.push(entry);
         checkInvariants();
+        scheduleSave();
         return entry;
       }
 
@@ -2530,6 +2763,240 @@
       });
       apptabs.append(...tabBtns);
 
+      /* ---------- persistence: autosave / export / import / reset ----------
+         The player records + log are the only things persisted (see the
+         PERSISTENCE helpers above for the shared shape/validation). CONFIG
+         is never persisted — it's read from code on every load. Saving is
+         debounced off the interaction path so a click never blocks on it,
+         however large the log has grown. */
+
+      const apptabsRight = document.createElement("div");
+      apptabsRight.className = "apptabs-right";
+
+      const saveStatusEl = document.createElement("span");
+      saveStatusEl.className = "save-status";
+      saveStatusEl.setAttribute("role", "status");
+      saveStatusEl.setAttribute("aria-live", "polite");
+
+      const exportBtn = document.createElement("button");
+      exportBtn.type = "button";
+      exportBtn.className = "mf-btn";
+      exportBtn.textContent = "Download JSON";
+
+      const importBtn = document.createElement("button");
+      importBtn.type = "button";
+      importBtn.className = "mf-btn";
+      importBtn.textContent = "Import…";
+      const importFile = document.createElement("input");
+      importFile.type = "file";
+      importFile.accept = "application/json,.json";
+      importFile.hidden = true;
+
+      const resetBtn = document.createElement("button");
+      resetBtn.type = "button";
+      resetBtn.className = "mf-btn";
+      resetBtn.textContent = "Reset…";
+
+      apptabsRight.append(saveStatusEl, exportBtn, importBtn, importFile, resetBtn);
+      apptabs.append(apptabsRight);
+
+      const saveBanner = document.createElement("div");
+      saveBanner.className = "invariant-banner save-banner";
+      saveBanner.setAttribute("role", "alert");
+      saveBanner.hidden = true;
+
+      let saveTimer = null;
+      let pendingSave = false;
+      let saveFailed = false;
+      let saveFailReason = "";
+      let lastSavedAt = restore ? (restore.savedAt || null) : null;
+
+      function buildSaveState(includeConfig) {
+        const obj = { schema: SCHEMA_VERSION, savedAt: Date.now(), players: ALL, log: LOG };
+        if (includeConfig) obj.config = CONFIG;
+        return obj;
+      }
+
+      function renderSaveStatus() {
+        if (saveFailed) {
+          saveStatusEl.textContent = "⚠ Not saved — " + saveFailReason;
+          saveStatusEl.className = "save-status bad";
+          saveBanner.hidden = false;
+          const h = document.createElement("div");
+          h.textContent = `⚠ Auction is NOT being saved: ${saveFailReason} Download JSON now to avoid losing progress.`;
+          saveBanner.replaceChildren(h);
+          return;
+        }
+        saveBanner.hidden = true;
+        if (pendingSave) {
+          saveStatusEl.textContent = "Saving…";
+          saveStatusEl.className = "save-status pending";
+        } else if (lastSavedAt) {
+          saveStatusEl.textContent = "Saved " + new Date(lastSavedAt).toLocaleTimeString([], { hour12: false });
+          saveStatusEl.className = "save-status ok";
+        } else {
+          saveStatusEl.textContent = "Not saved yet";
+          saveStatusEl.className = "save-status";
+        }
+      }
+
+      function doSave() {
+        pendingSave = false;
+        let json;
+        try {
+          json = JSON.stringify(buildSaveState(false), jsonReplacer);
+        } catch (e) {
+          saveFailed = true;
+          saveFailReason = "Could not prepare data to save (" + ((e && e.message) || e) + ").";
+          renderSaveStatus();
+          return;
+        }
+        try {
+          localStorage.setItem(STORAGE_KEY, json);
+          saveFailed = false;
+          saveFailReason = "";
+          lastSavedAt = Date.now();
+        } catch (e) {
+          saveFailed = true;
+          saveFailReason = (e && e.name === "QuotaExceededError")
+            ? "Browser storage is full."
+            : "Browser storage is unavailable (" + ((e && e.message) || e) + ").";
+        }
+        renderSaveStatus();
+      }
+
+      // Debounced + deferred: a burst of actions (or a huge log) coalesces
+      // into one save a moment later, off the click that triggered it.
+      function scheduleSave() {
+        pendingSave = true;
+        renderSaveStatus();
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(doSave, 250);
+      }
+
+      window.addEventListener("beforeunload", () => {
+        if (pendingSave) { clearTimeout(saveTimer); doSave(); }
+      });
+
+      exportBtn.addEventListener("click", () => {
+        downloadJSON(buildSaveState(true), exportFilename());
+        toast("Exported current auction state.");
+      });
+
+      function applyImport(obj) {
+        const byId = new Map(obj.players.map(p => [String(p.id), p]));
+        for (const p of ALL) {
+          const s = byId.get(String(p.id));
+          if (s) { p.status = s.status; p.owner = s.owner; p.price = s.price; }
+          else { p.status = "available"; p.owner = null; p.price = null; }
+        }
+        LOG.length = 0;
+        for (const e of obj.log) LOG.push(e);
+        logSeq = LOG.reduce((m, e) => Math.max(m, Number(e.seq) || 0), 0);
+        if (SELECTED) cancelSelection();
+        if (editPlayer) closeEdit();
+        checkInvariants();
+        scheduleSave();
+        render();
+        setView("auction");
+        toast(`Imported ${obj.players.length} player record${obj.players.length === 1 ? "" : "s"} and ${obj.log.length} log entr${obj.log.length === 1 ? "y" : "ies"}.`);
+      }
+
+      importBtn.addEventListener("click", () => importFile.click());
+      importFile.addEventListener("change", () => {
+        const file = importFile.files && importFile.files[0];
+        importFile.value = "";
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          let obj;
+          try { obj = JSON.parse(String(reader.result)); }
+          catch (e) {
+            showConfirm({
+              title: "Import failed",
+              lines: ["The selected file is not valid JSON.", String((e && e.message) || e)],
+              buttons: [{ label: "OK" }]
+            });
+            return;
+          }
+          const errs = validateStateShape(obj);
+          if (errs.length) {
+            showConfirm({
+              title: `Import failed — ${errs.length} problem${errs.length > 1 ? "s" : ""}`,
+              sub: "The file doesn't match the expected format. Nothing was changed.",
+              lines: errs.length > 12 ? [...errs.slice(0, 12), `…and ${errs.length - 12} more`] : errs,
+              buttons: [{ label: "OK" }]
+            });
+            return;
+          }
+          const currentIds = idSetOf(ALL);
+          const importIds = idSetOf(obj.players);
+          if (!setsEqual(currentIds, importIds)) {
+            showConfirm({
+              title: "Import doesn't match the current player list",
+              sub: "This file was built from a different players.json (a different player set) than the one currently loaded. It will not be merged with the current state.",
+              lines: [`Importing file: ${obj.players.length} players, ${obj.log.length} log entries${obj.savedAt ? ", saved " + new Date(obj.savedAt).toLocaleString() : ""}.`],
+              buttons: [
+                { label: "Export current state, then import", kind: "primary", onClick: () => { downloadJSON(buildSaveState(true), exportFilename()); applyImport(obj); } },
+                { label: "Discard current state and import", kind: "danger", onClick: () => applyImport(obj) },
+                { label: "Cancel", onClick: () => { } }
+              ]
+            });
+            return;
+          }
+          showConfirm({
+            title: "Import and replace current auction data?",
+            sub: `${obj.players.length} players, ${obj.log.length} log entries.`,
+            lines: ["This replaces every sale, price, and the entire log with the contents of this file."],
+            buttons: [
+              { label: "Import & replace", kind: "primary", onClick: () => applyImport(obj) },
+              { label: "Cancel", onClick: () => { } }
+            ]
+          });
+        };
+        reader.onerror = () => {
+          showConfirm({ title: "Import failed", lines: ["Could not read the selected file."], buttons: [{ label: "OK" }] });
+        };
+        reader.readAsText(file);
+      });
+
+      function performReset() {
+        for (const p of ALL) { p.status = "available"; p.owner = null; p.price = null; }
+        LOG.length = 0;
+        logSeq = 0;
+        if (SELECTED) cancelSelection();
+        if (editPlayer) closeEdit();
+        clearTimeout(saveTimer);
+        pendingSave = false;
+        try { localStorage.removeItem(STORAGE_KEY); saveFailed = false; saveFailReason = ""; }
+        catch (e) { saveFailed = true; saveFailReason = "Could not clear saved data (" + ((e && e.message) || e) + ")."; }
+        lastSavedAt = null;
+        renderSaveStatus();
+        checkInvariants();
+        render();
+        toast("Auction reset — every player is available and all wallets are full.");
+      }
+
+      resetBtn.addEventListener("click", () => {
+        let nSold = 0, nUnsold = 0;
+        for (const p of ALL) { if (p.status === "sold") nSold++; else if (p.status === "unsold") nUnsold++; }
+        showConfirm({
+          title: "Reset the auction?",
+          sub: "This clears every sale and the entire log. It cannot be undone.",
+          lines: [
+            `${nSold} sold player${nSold === 1 ? "" : "s"} return to available.`,
+            `${nUnsold} unsold flag${nUnsold === 1 ? "" : "s"} cleared.`,
+            `${LOG.length} log entr${LOG.length === 1 ? "y" : "ies"} erased.`,
+            `Every wallet returns to ${CONFIG.startingBudget}.`
+          ],
+          buttons: [
+            { label: "Export first, then reset", kind: "primary", onClick: () => { downloadJSON(buildSaveState(true), exportFilename()); performReset(); } },
+            { label: "Reset without exporting", kind: "danger", onClick: performReset },
+            { label: "Cancel", onClick: () => { } }
+          ]
+        });
+      });
+
       /* ---------- teams view ---------- */
       //
       // Dense, all-squads-at-once review screen: photo/name/budget summary up
@@ -3029,7 +3496,7 @@
       }
       tabBtns[0].classList.add("on");
 
-      app.replaceChildren(invariantBanner, apptabs, auctionView, teamsView, logView, editOverlay, toastEl);
+      app.replaceChildren(saveBanner, invariantBanner, apptabs, auctionView, teamsView, logView, editOverlay, toastEl);
 
       // Sticky group headers sit just below the real header row. Two things
       // were wrong before: (1) the measurement used the <tr>, but the sticky
@@ -3484,6 +3951,10 @@
       cancelBtn.addEventListener("click", () => cancelSelection());
 
       checkInvariants();     // baseline: the freshly loaded records must be consistent
+      renderSaveStatus();
+      if (restore) {
+        toast(`Restored autosaved data from ${restore.savedAt ? new Date(restore.savedAt).toLocaleString() : "an earlier session"} (${LOG.length} log entr${LOG.length === 1 ? "y" : "ies"}).`);
+      }
       render();
       search.focus();
     }
