@@ -42,6 +42,12 @@
       --err: #ef5451;
       --warn-wash: #241d10;
 
+      /* Neutral selection/focus marker — keyboard-highlighted row, a
+       manager card mid-pick. Deliberately not any CONFIG manager colour
+       (nor --accent, which happens to equal one) so a selection ring or
+       edge never reads as "that manager's colour". */
+      --select: #c7d0da;
+
       /* legacy aliases — kept so every existing rule below (panel/line/
        row2/hover/hd/muted) still resolves through the token system
        above rather than a scattered literal. */
@@ -518,8 +524,8 @@
       position: relative;
       display: flex;
       flex-direction: column;
-      gap: 1px;
-      padding: 4px 8px 5px 7px;
+      gap: 0;
+      padding: 3px 8px 3px 7px;
       border: 1px solid var(--line);
       border-left: 4px solid var(--mgr-color, var(--border));
       border-radius: 6px;
@@ -568,46 +574,27 @@
       min-width: 0;
     }
 
-    /* Max bid is the single number a manager needs mid-auction — the
-     largest, highest-contrast figure in this whole region. When they
-     can't bid at all, it stops being a number and becomes a filled,
-     labelled flag: unmistakable at a glance, not a colour tint. */
-    .mgr-maxbid {
-      font-size: 27px;
-      font-weight: 800;
-      font-variant-numeric: tabular-nums;
-      line-height: 1.1;
-      margin-top: 2px;
-      color: var(--text);
-    }
-
-    .mgr-maxbid.full,
-    .mgr-maxbid.belowmin {
-      display: inline-block;
-      font-size: 12px;
-      font-weight: 800;
+    /* Wallet remaining is the persistent, always-visible figure for this
+     card — the max bid (a different quantity, and the one that matters
+     only while a lot is live) lives exclusively in the lot panel now, so
+     the two rows never show the same number twice. Every large number
+     gets a small caption; this is the one here. */
+    .mgr-remaining-label {
+      display: block;
+      font-size: 8px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: .03em;
-      padding: 3px 7px;
-      border-radius: 5px;
-      line-height: 1.3;
-      margin-top: 5px;
-    }
-
-    .mgr-maxbid.full {
-      background: var(--ok);
-      color: var(--on-color);
-    }
-
-    .mgr-maxbid.belowmin {
-      background: var(--err);
-      color: var(--on-color);
-    }
-
-    .mgr-rem {
-      font-size: 10px;
+      letter-spacing: .05em;
       color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .mgr-remaining {
+      font-size: 22px;
+      font-weight: 800;
       font-variant-numeric: tabular-nums;
+      line-height: 1.05;
+      color: var(--text);
     }
 
     .mgr-slots {
@@ -640,20 +627,24 @@
       cursor: pointer;
     }
 
+    /* Selection/focus states (picked-for-bid, hover-while-picking, keyboard
+     highlight) use --select — a neutral tone kept deliberately distinct
+     from every CONFIG manager colour, so a coloured ring or edge here
+     never gets mistaken for a specific manager's identity. */
     .walletbar.pick .mgr:hover {
-      border-color: var(--accent);
+      border-color: var(--select);
     }
 
     .mgr.picked {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 1px var(--accent) inset;
+      border-color: var(--select);
+      box-shadow: 0 0 0 1px var(--select) inset;
     }
 
     .mgr.blocked {
       opacity: .5;
     }
 
-    .mgr.blocked .mgr-maxbid {
+    .mgr.blocked .mgr-remaining {
       color: var(--err);
     }
 
@@ -665,9 +656,9 @@
     .lotpanel {
       position: relative;
       display: flex;
-      gap: 16px;
+      gap: 14px;
       align-items: stretch;
-      padding: 8px 14px;
+      padding: 6px 14px;
       background: var(--panel);
       border-bottom: 1px solid var(--line);
       overflow-x: auto;
@@ -691,7 +682,7 @@
 
     .lot-player {
       display: flex;
-      gap: 14px;
+      gap: 12px;
       align-items: center;
       flex: 0 0 auto;
       min-width: 260px;
@@ -704,13 +695,13 @@
 
     .lot-photo-wrap {
       flex: none;
-      width: 88px;
-      height: 88px;
+      width: 76px;
+      height: 76px;
     }
 
     .lot-photo {
-      width: 88px;
-      height: 88px;
+      width: 76px;
+      height: 76px;
       border-radius: 12px;
       object-fit: cover;
       background: var(--bg);
@@ -719,8 +710,8 @@
 
     .lot-photo-txt {
       display: flex;
-      width: 88px;
-      height: 88px;
+      width: 76px;
+      height: 76px;
       border-radius: 12px;
       align-items: center;
       justify-content: center;
@@ -785,11 +776,12 @@
       color: var(--muted);
     }
 
-    /* Manager photo cards — photo, name, and this lot's position count. Nothing else.
-     Laid out horizontally (photo beside text, not stacked above it) so the card's
-     natural height stays under the player photo's 88px — the panel's height is
-     set by that photo either way, so a taller card here would only add dead
-     space instead of giving it back to the player list. */
+    /* Manager cards — photo, name, max bid (the reason this panel exists),
+     remaining and this lot's position count. Laid out horizontally (photo
+     beside text) so the card's natural height stays under the player
+     photo's 76px — the panel's height is set by that photo either way, so
+     a taller card here would only add dead space instead of giving it
+     back to the player list. */
     .lot-mgrs {
       display: grid;
       grid-auto-flow: column;
@@ -802,8 +794,8 @@
     .lot-mgr {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 6px 10px 6px 8px;
+      gap: 7px;
+      padding: 5px 9px 5px 7px;
       border: 1px solid var(--line);
       border-left: 4px solid var(--mgr-color, var(--border));
       border-radius: 10px;
@@ -812,14 +804,14 @@
     }
 
     .lot-mgr.picked {
-      border-color: var(--accent);
-      border-left-color: var(--accent);
-      box-shadow: 0 0 0 1px var(--accent) inset;
+      border-color: var(--select);
+      border-left-color: var(--select);
+      box-shadow: 0 0 0 1px var(--select) inset;
     }
 
     .lot-mgr-photo {
-      width: 52px;
-      height: 52px;
+      width: 46px;
+      height: 46px;
       border-radius: 8px;
       object-fit: cover;
       background: var(--bg);
@@ -829,8 +821,8 @@
 
     .lot-mgr-initials {
       display: flex;
-      width: 52px;
-      height: 52px;
+      width: 46px;
+      height: 46px;
       border-radius: 8px;
       flex: none;
       align-items: center;
@@ -877,14 +869,24 @@
     /* The max bid — the number a manager actually needs while a lot is
      live — is deliberately the largest, highest-contrast figure anywhere
      in the lot panel: bigger than the player's own stats, bigger than the
-     position count below it. When they can't bid, same filled-flag
-     treatment as the wallet strip, never just a dimmer number. */
+     position count below it. It's the only place this figure appears at
+     all (the wallet strip shows remaining instead), so it's always
+     captioned — no large number on screen goes unlabelled. When they
+     can't bid, a filled flag, never just a dimmer number. */
+    .lot-mgr-maxbid-label {
+      display: block;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+    }
+
     .lot-mgr-maxbid {
-      font-size: 26px;
+      font-size: 24px;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
       line-height: 1.05;
-      margin-top: 1px;
       color: var(--text);
     }
 
@@ -1090,7 +1092,7 @@
     }
 
     tbody td {
-      padding: 2px 8px;
+      padding: 1px 8px;
       border-bottom: 1px solid var(--line);
       white-space: nowrap;
       overflow: hidden;
@@ -1100,6 +1102,7 @@
     tbody tr.r {
       cursor: pointer;
       background: var(--bg);
+      line-height: 1.15;
     }
 
     tbody tr.r:hover {
@@ -1108,17 +1111,6 @@
 
     tbody tr.r.alt {
       background: var(--row2);
-    }
-
-    tbody tr.r.hi td {
-      background: var(--accent);
-      color: var(--on-color);
-    }
-
-    tbody tr.r.hi td .nm,
-    tbody tr.r.hi td .meta,
-    tbody tr.r.hi td .mark {
-      color: var(--on-color);
     }
 
     /* Sold — settled, de-emphasised relative to available rows. Text drops
@@ -1154,6 +1146,19 @@
 
     tbody tr.r.unsoldrow td:first-child {
       box-shadow: inset 3px 0 0 var(--warn);
+    }
+
+    /* Keyboard highlight — a neutral selection treatment, never a manager
+     colour: a lighter surface plus a left edge in --select. Declared after
+     sold/unsold above so wherever your cursor lands stays fully legible,
+     not dimmed or tinted by either of those states. */
+    tbody tr.r.hi td {
+      background: var(--surface-3);
+      color: var(--text);
+    }
+
+    tbody tr.r.hi td:first-child {
+      box-shadow: inset 3px 0 0 var(--select);
     }
 
     tr.grp td {
@@ -1192,8 +1197,8 @@
     }
 
     .ph {
-      width: 26px;
-      height: 26px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       object-fit: cover;
       background: var(--bg);
@@ -1202,14 +1207,14 @@
 
     .ph-txt {
       display: flex;
-      width: 26px;
-      height: 26px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       align-items: center;
       justify-content: center;
       background: var(--bg);
       border: 1px solid var(--line);
-      font-size: 9px;
+      font-size: 7px;
       font-weight: 700;
       color: var(--muted);
     }
@@ -1290,6 +1295,12 @@
       font-size: 10px;
       font-weight: 700;
       color: var(--on-color);
+    }
+
+    /* Grouped-by-position view already sections rows under a position
+     header — the per-row pill would just repeat it, so it's dropped. */
+    table.grouped-view tbody td .pos {
+      display: none;
     }
 
     /* ---------- transaction log view ---------- */
@@ -1568,9 +1579,9 @@
     }
 
     .edit-mgr.on {
-      border-color: var(--accent);
-      border-left-color: var(--accent);
-      box-shadow: 0 0 0 1px var(--accent) inset;
+      border-color: var(--select);
+      border-left-color: var(--select);
+      box-shadow: 0 0 0 1px var(--select) inset;
     }
 
     .edit-mgr.blocked {
@@ -1734,10 +1745,10 @@
       // red/green pair; a fifth manager with no colour set here falls back
       // to an auto-generated one (see managerColor()).
       managers: [
-        { name: "Name1", photo: "assets/managers/1.jpg", color: "#5b9bff" },
-        { name: "Name2", photo: "assets/managers/2.jpg", color: "#e2953a" },
-        { name: "Name3", photo: "assets/managers/3.jpg", color: "#b47ee8" },
-        { name: "Name4", photo: "assets/managers/4.jpg", color: "#2fb8ac" }
+        { name: "Rizzie", photo: "assets/managers/1.jpeg", color: "#5b9bff" },
+        { name: "Shreyas", photo: "assets/managers/2.jpeg", color: "#e2953a" },
+        { name: "Savya", photo: "assets/managers/3.jpeg", color: "#b47ee8" },
+        { name: "Shauryavardhan", photo: "assets/managers/4.jpeg", color: "#2fb8ac" }
       ],
       startingBudget: 200,
       squadSize: 15,
@@ -2306,8 +2317,7 @@
               ? `${e.name} back to available (refunded ${prevPrice} to ${mgrName(e.prev.owner)})`
               : `${e.name} back to available (was unsold)`;
           case "undo":
-            return `reversed #${e.undoOf} ${TYPE_LABEL[e.undoneType] || e.undoneType} — ${e.name} restored to ${
-              e.next.status === "sold" ? `${mgrName(e.next.owner)} at ${nextPrice}` : e.next.status}`;
+            return `reversed #${e.undoOf} ${TYPE_LABEL[e.undoneType] || e.undoneType} — ${e.name} restored to ${e.next.status === "sold" ? `${mgrName(e.next.owner)} at ${nextPrice}` : e.next.status}`;
           default:
             return e.name;
         }
@@ -2348,8 +2358,8 @@
 
       /* column model for the table */
       const COLS = [
-        { key: "photo", label: "", w: "38px", render: photoCell },
-        { key: "name", label: "Name", w: "", render: nameCell },
+        { key: "photo", label: "", w: "34px", render: photoCell },
+        { key: "name", label: "Name", w: "180px", render: nameCell },
         { key: "club", label: "Club", w: "170px", render: clubCell },
         { key: "position", label: "Pos", w: "54px", render: posCell }
       ];
@@ -2361,6 +2371,11 @@
           render: p => o.key === "value" ? fmtVal(p.value) : fmtInt(p[o.key])
         });
       }
+      // Every column above is a tight, explicit width so name/club/position/
+      // stats sit close together as one cluster instead of name eating all
+      // the slack — except the last, left unset so it (not name) absorbs
+      // whatever width is left over in a fixed-layout table.
+      COLS[COLS.length - 1].w = "";
       const NCOL = COLS.length;
 
       /* ---------- cell renderers ---------- */
@@ -2377,7 +2392,7 @@
         const crestU = imgUrl(CONFIG.imageUrls.club, p.clubId);
 
         if (photoU) {
-          const img = new Image(26, 26);
+          const img = new Image(18, 18);
           img.className = "ph";
           img.loading = "lazy";
           img.decoding = "async";
@@ -2386,7 +2401,7 @@
           img.onerror = function () {
             this.onerror = null;               // stop loops before swapping
             if (crestU) {
-              const c = new Image(26, 26);
+              const c = new Image(18, 18);
               c.className = "ph";
               c.loading = "lazy";
               c.referrerPolicy = "no-referrer";
@@ -2402,7 +2417,7 @@
           return img;
         }
         if (crestU) {
-          const c = new Image(26, 26);
+          const c = new Image(18, 18);
           c.className = "ph";
           c.loading = "lazy";
           c.referrerPolicy = "no-referrer";
@@ -2551,16 +2566,16 @@
         name.className = "mgr-name";
         name.textContent = m.name;
         nameRow.append(dot, name);
-        const mb = document.createElement("span");
-        mb.className = "mgr-maxbid";
+        const remLabel = document.createElement("span");
+        remLabel.className = "mgr-remaining-label";
+        remLabel.textContent = "Remaining";
         const rem = document.createElement("span");
-        rem.className = "mgr-rem";
+        rem.className = "mgr-remaining";
         const slots = document.createElement("span");
         slots.className = "mgr-slots";
         const pos = document.createElement("span");
         pos.className = "mgr-pos";
-        c.append(key, nameRow, mb, rem, slots, pos);
-        c._mb = mb;
+        c.append(key, nameRow, remLabel, rem, slots, pos);
         c._rem = rem;
         c._slots = slots;
         c._pos = pos;
@@ -2571,10 +2586,11 @@
 
       /* ---------- current lot panel ---------- */
       //
-      // Budget, max bid and slots live only in the wallet strip above (single
-      // source of truth). This panel is purely the "what's up for bid right now"
-      // view: the player, and — per manager — just a photo, name, and how many
-      // of this position they already hold.
+      // Wallet remaining and slots live only in the wallet strip above; max
+      // bid lives only here — the two rows deliberately never show the same
+      // figure twice. This panel is the "what's up for bid right now" view:
+      // the player, and — per manager — photo, name, max bid, remaining, and
+      // how many of this position they already hold.
       //
       // The player card and the manager cards are built once and always fully
       // populated (real content when a lot is selected, bootstrap placeholder
@@ -2623,8 +2639,12 @@
         nm.textContent = m.name;
         nameRow.append(dot, nm);
         // The max bid is the single most important number on screen during a
-        // lot — reusing the same computeBid() figure already shown in the
-        // wallet strip, just rendered largest here where the bidding focus is.
+        // lot — the only place it's shown now (the wallet strip shows
+        // remaining budget instead, so the two rows never duplicate a figure).
+        // Every large number here is captioned; this is that caption.
+        const maxbidLabel = document.createElement("span");
+        maxbidLabel.className = "lot-mgr-maxbid-label";
+        maxbidLabel.textContent = "Max bid";
         const maxbid = document.createElement("div");
         maxbid.className = "lot-mgr-maxbid";
         maxbid.textContent = "0";          // bootstrap value — reserves height before any real selection
@@ -2645,7 +2665,7 @@
         metaRow.append(rem, posRow);
         const info = document.createElement("div");
         info.className = "lot-mgr-info";
-        info.append(nameRow, maxbid, metaRow);
+        info.append(nameRow, maxbidLabel, maxbid, metaRow);
         c.append(photoWrap, info);
         c._poslabel = poslabel;
         c._pos = poscount;
@@ -3774,6 +3794,10 @@
         );
 
         const mode = sortSel.value;
+        // Grouped view already sections players by position with a header
+        // per group — the per-row pill would just repeat that, so it's
+        // hidden there and shown for every other sort mode.
+        table.classList.toggle("grouped-view", mode === "group");
         const byName = (a, b) => a._n.localeCompare(b._n);
         if (mode === "group") {
           list.sort((a, b) =>
@@ -3896,10 +3920,7 @@
         MANAGERS.forEach((m, i) => {
           const w = computeBid(m);
           const c = mgrCards[i];
-          c._mb.textContent = w.state === "full" ? "Squad full" : w.state === "belowmin" ? "No bid" : fmtMoney(w.maxBid);
-          c._mb.classList.toggle("full", w.state === "full");
-          c._mb.classList.toggle("belowmin", w.state === "belowmin");
-          c._rem.textContent = w.remaining + " left";
+          c._rem.textContent = fmtMoney(w.remaining);
           c._slots.textContent = w.slots + "/" + CONFIG.squadSize;
           c.classList.toggle("full", w.slots >= CONFIG.squadSize);
           // reserved even when blank (fix CSS on .mgr-pos keeps the line's height constant)
