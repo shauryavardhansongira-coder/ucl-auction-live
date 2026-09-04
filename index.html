@@ -1098,6 +1098,372 @@
       color: #fff;
     }
 
+    /* ---------- transaction log view ---------- */
+    .logview {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      background: var(--bg);
+    }
+
+    .logview[hidden] {
+      display: none;
+    }
+
+    .log-head {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding: 7px 12px;
+      background: var(--hd);
+      border-bottom: 1px solid var(--line);
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-weight: 700;
+    }
+
+    .log-head .log-hint {
+      text-transform: none;
+      letter-spacing: 0;
+      font-weight: 400;
+    }
+
+    .log-row {
+      display: grid;
+      grid-template-columns: 44px 64px 92px 1fr;
+      gap: 10px;
+      align-items: baseline;
+      padding: 5px 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+    }
+
+    .log-row.alt {
+      background: var(--row2);
+    }
+
+    .log-seq {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-size: 11px;
+    }
+
+    .log-time {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-size: 11px;
+    }
+
+    .log-type {
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      padding: 1px 0;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+      text-align: center;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .log-type.t-sale {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .log-type.t-unsold {
+      color: var(--warn);
+      border-color: var(--warn);
+    }
+
+    .log-type.t-edit_price,
+    .log-type.t-reassign {
+      color: var(--text);
+      border-color: var(--text);
+    }
+
+    .log-type.t-release {
+      color: var(--muted);
+    }
+
+    .log-type.t-undo {
+      color: var(--err);
+      border-color: var(--err);
+    }
+
+    .log-what .sub {
+      color: var(--muted);
+    }
+
+    .log-row.undone .log-what {
+      opacity: .5;
+      text-decoration: line-through;
+    }
+
+    .log-row.undone .log-seq::after {
+      content: " ↩";
+      color: var(--err);
+      text-decoration: none;
+    }
+
+    .log-empty {
+      padding: 40px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    /* ---------- undo / status toast ---------- */
+    .toast {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 60;
+      max-width: min(760px, 92vw);
+      padding: 9px 15px;
+      border-radius: 8px;
+      background: var(--panel);
+      border: 1px solid var(--accent);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .toast[hidden] {
+      display: none;
+    }
+
+    .toast.warn {
+      border-color: var(--warn);
+    }
+
+    .toast b {
+      font-weight: 800;
+    }
+
+    /* ---------- invariant failure banner ---------- */
+    .invariant-banner {
+      background: var(--err);
+      color: #fff;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .invariant-banner[hidden] {
+      display: none;
+    }
+
+    .invariant-banner ul {
+      margin: 4px 0 0;
+      padding-left: 18px;
+      font-weight: 400;
+      max-height: 120px;
+      overflow: auto;
+    }
+
+    /* ---------- edit / reassign dialog ---------- */
+    .editoverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, .5);
+      padding: 20px;
+    }
+
+    .editoverlay[hidden] {
+      display: none;
+    }
+
+    .editdialog {
+      width: min(760px, 100%);
+      max-height: 90vh;
+      overflow: auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .55);
+    }
+
+    .edit-head {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .edit-head-info {
+      min-width: 0;
+    }
+
+    .edit-title {
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .edit-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .edit-body {
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .edit-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    .editdialog input.price {
+      margin-left: 0;
+      width: 110px;
+      font-size: 16px;
+    }
+
+    .edit-mgrs {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+    }
+
+    .edit-mgr {
+      text-align: left;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .edit-mgr.on {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent) inset;
+    }
+
+    .edit-mgr.blocked {
+      opacity: .5;
+    }
+
+    .edit-mgr b {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .edit-mgr .em-line {
+      display: block;
+      font-size: 10px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      margin-top: 1px;
+    }
+
+    .edit-mgr .flag-err {
+      color: var(--err);
+      font-weight: 700;
+    }
+
+    .edit-mgr .flag-warn {
+      color: var(--warn);
+      font-weight: 700;
+    }
+
+    .edit-mgr .em-cur {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .edit-msg {
+      font-size: 12px;
+      font-weight: 600;
+      min-height: 16px;
+    }
+
+    .edit-msg.err {
+      /* scoped override: the page-level .err is the load-failure box */
+      margin: 0;
+      max-width: none;
+      background: none;
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      color: var(--err);
+    }
+
+    .edit-msg.warn {
+      color: var(--warn);
+    }
+
+    .edit-foot {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 11px 14px;
+      border-top: 1px solid var(--line);
+    }
+
+    .edit-foot .spacer {
+      flex: 1;
+    }
+
+    .edit-foot button {
+      padding: 6px 12px;
+      font-size: 12px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .edit-foot button.primary {
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .edit-foot button.danger {
+      border-color: var(--err);
+      color: var(--err);
+    }
+
+    .edit-foot button[disabled] {
+      opacity: .4;
+      cursor: default;
+    }
+
+    /* teams-view rows are the entry point to edit/reassign */
+    .team-row.clickable {
+      cursor: pointer;
+    }
+
+    .team-row.clickable:hover {
+      background: var(--hover);
+    }
+
     .empty {
       padding: 40px;
       text-align: center;
@@ -1325,6 +1691,211 @@
         let n = 0;
         for (const p of ALL) if (p.status === "sold" && p.owner === m.id && p.position === pos) n++;
         return n;
+      }
+
+      function clubCountOf(m, club) {
+        let n = 0;
+        for (const p of ALL) if (p.status === "sold" && p.owner === m.id && p.club === club) n++;
+        return n;
+      }
+
+      /* ============================================================
+         TRANSACTION LOG / UNDO
+         ------------------------------------------------------------
+         The player records are the single source of truth. Every wallet,
+         slot, position and club figure in the UI is derived from them on
+         every render — nothing is cached or incrementally adjusted, so
+         there is no running total that can drift out of step.
+
+         The log is append-only. Each entry carries the COMPLETE player
+         state before and after the change, which makes undo exact by
+         construction: undoing is just writing `prev` back, so a reassign
+         restores the original owner and an edit restores the original
+         price without any per-type reversal logic.
+
+         Action types: sale, unsold, edit_price, reassign, undo — plus
+         `release`, which covers both "revert a sale, refund the price"
+         and "put an unsold player back in the pool" (the same transition
+         from the records' point of view: back to available).
+         ============================================================ */
+
+      const BY_ID = new Map(ALL.map(p => [p.id, p]));
+      const LOG = [];
+      let logSeq = 0;
+
+      function snapOf(p) {
+        return { status: p.status, owner: p.owner, price: p.price };
+      }
+
+      function applySnap(p, s) {
+        p.status = s.status;
+        p.owner = s.owner;
+        p.price = s.price;
+      }
+
+      // The single choke point for every state change. Mutates, logs, then
+      // re-verifies the derived-value invariants. Rendering is left to the
+      // caller so a single user action causes exactly one repaint.
+      function applyChange(p, next, type, extra) {
+        const prev = snapOf(p);
+        applySnap(p, next);
+        const entry = {
+          seq: ++logSeq,
+          ts: Date.now(),
+          type,
+          pid: p.id,
+          name: p.name,
+          club: p.club,
+          position: p.position,
+          prev,
+          next: snapOf(p),
+          undoneBy: null,
+          undoOf: (extra && extra.undoOf) || null,
+          undoneType: (extra && extra.undoneType) || null
+        };
+        LOG.push(entry);
+        checkInvariants();
+        return entry;
+      }
+
+      /* ---- invariant checking ----
+         Recomputes every derived quantity straight from the player records,
+         by a separate reduction from the one the UI uses, and compares. The
+         structural checks are the ones with real teeth: they catch a partial
+         mutation (sold with no owner, available that kept its price, a NaN
+         price that would silently read as 0 in the wallet sum). */
+
+      let invariantProblems = [];
+
+      function checkInvariants() {
+        const problems = [];
+
+        for (const p of ALL) {
+          if (p.status === "sold") {
+            if (!isNum(p.price)) problems.push(`${p.name}: sold but price is not a number (${String(p.price)}).`);
+            if (p.owner == null || !MANAGERS[p.owner]) problems.push(`${p.name}: sold but owner is invalid (${String(p.owner)}).`);
+          } else if (p.status === "available" || p.status === "unsold") {
+            if (p.owner != null) problems.push(`${p.name}: ${p.status} but still owned by ${String(p.owner)}.`);
+            if (p.price != null) problems.push(`${p.name}: ${p.status} but still priced at ${String(p.price)}.`);
+          } else {
+            problems.push(`${p.name}: unknown status "${String(p.status)}".`);
+          }
+        }
+
+        for (const m of MANAGERS) {
+          let spent = 0, slots = 0;
+          const pos = Object.create(null), clubs = Object.create(null);
+          for (const p of ALL) {
+            if (p.status !== "sold" || p.owner !== m.id) continue;
+            spent += Number(p.price) || 0;
+            slots++;
+            pos[p.position] = (pos[p.position] || 0) + 1;
+            clubs[p.club] = (clubs[p.club] || 0) + 1;
+          }
+          const w = walletOf(m);
+          if (CONFIG.startingBudget - spent !== w.remaining) {
+            problems.push(`${m.name}: budget invariant broken — ${CONFIG.startingBudget} − ${spent} ≠ ${w.remaining}.`);
+          }
+          if (spent !== w.spent) problems.push(`${m.name}: spent mismatch — ${spent} vs ${w.spent}.`);
+          if (slots !== w.slots) problems.push(`${m.name}: slot count mismatch — ${slots} vs ${w.slots}.`);
+          for (const q of ORDERED_POS) {
+            if ((pos[q] || 0) !== posCountOf(m, q)) {
+              problems.push(`${m.name}: ${q} count mismatch — ${pos[q] || 0} vs ${posCountOf(m, q)}.`);
+            }
+          }
+          for (const c of Object.keys(clubs)) {
+            if (clubs[c] !== clubCountOf(m, c)) {
+              problems.push(`${m.name}: ${c} count mismatch — ${clubs[c]} vs ${clubCountOf(m, c)}.`);
+            }
+          }
+        }
+
+        invariantProblems = problems;
+        renderInvariantBanner();
+        return problems;
+      }
+
+      /* ---- undo ----
+         Walks back through the log to the most recent entry that hasn't been
+         undone already. The undo itself is logged (so the history keeps the
+         mistake) and is never itself reversible — no redo. */
+
+      function lastReversible() {
+        for (let i = LOG.length - 1; i >= 0; i--) {
+          const e = LOG[i];
+          if (e.type !== "undo" && e.undoneBy == null) return e;
+        }
+        return null;
+      }
+
+      function performUndo() {
+        const target = lastReversible();
+        if (!target) {
+          toast("Nothing to undo — no reversible actions in the log yet.", "warn");
+          return;
+        }
+        const p = BY_ID.get(target.pid);
+        if (!p) {
+          toast(`Cannot undo #${target.seq} — player record ${target.pid} is missing.`, "warn");
+          return;
+        }
+        if (SELECTED) cancelSelection();
+        const entry = applyChange(p, target.prev, "undo", {
+          undoOf: target.seq,
+          undoneType: target.type
+        });
+        target.undoneBy = entry.seq;
+        toast(`Undid #${target.seq} ${TYPE_LABEL[target.type] || target.type} — ${describeEntry(target)}. ${target.name} is now ${stateWords(p)}.`);
+        renderAll();
+      }
+
+      /* ---- log entry wording (shared by the log view and undo toasts) ---- */
+
+      const TYPE_LABEL = {
+        sale: "sale",
+        unsold: "unsold",
+        edit_price: "edit price",
+        reassign: "reassign",
+        release: "release",
+        undo: "undo"
+      };
+
+      function mgrName(id) {
+        const m = id == null ? null : MANAGERS[id];
+        return m ? m.name : "—";
+      }
+
+      function stateWords(p) {
+        if (p.status === "sold") return `${mgrName(p.owner)}'s at ${fmtMoney(p.price)}`;
+        if (p.status === "unsold") return "unsold";
+        return "available";
+      }
+
+      function describeEntry(e) {
+        const prevPrice = fmtMoney(e.prev.price);
+        const nextPrice = fmtMoney(e.next.price);
+        switch (e.type) {
+          case "sale":
+            return `${e.name} → ${mgrName(e.next.owner)} for ${nextPrice}` +
+              (e.prev.status === "unsold" ? " (was unsold)" : "");
+          case "unsold":
+            return `${e.name} marked unsold` +
+              (e.prev.status === "sold" ? ` (was ${mgrName(e.prev.owner)}'s at ${prevPrice})` : "");
+          case "edit_price":
+            return `${e.name} (${mgrName(e.next.owner)}) price ${prevPrice} → ${nextPrice}`;
+          case "reassign":
+            return `${e.name} ${mgrName(e.prev.owner)} → ${mgrName(e.next.owner)}` +
+              (e.prev.price !== e.next.price ? `, price ${prevPrice} → ${nextPrice}` : ` at ${nextPrice}`);
+          case "release":
+            return e.prev.status === "sold"
+              ? `${e.name} back to available (refunded ${prevPrice} to ${mgrName(e.prev.owner)})`
+              : `${e.name} back to available (was unsold)`;
+          case "undo":
+            return `reversed #${e.undoOf} ${TYPE_LABEL[e.undoneType] || e.undoneType} — ${e.name} restored to ${
+              e.next.status === "sold" ? `${mgrName(e.next.owner)} at ${nextPrice}` : e.next.status}`;
+          default:
+            return e.name;
+        }
       }
 
       /* ---- selection / assignment state ---- */
@@ -1835,6 +2406,11 @@
       const cancelBtn = document.createElement("button");
       cancelBtn.type = "button";
       cancelBtn.textContent = "Cancel (Esc)";
+      // only meaningful for a player currently marked unsold
+      const releaseBtn = document.createElement("button");
+      releaseBtn.type = "button";
+      releaseBtn.textContent = "Back to available (R)";
+      releaseBtn.hidden = true;
 
       const assignErr = document.createElement("span");
       assignErr.className = "assign-err";
@@ -1848,7 +2424,7 @@
 
       const selWrap = document.createElement("span");
       selWrap.className = "selwrap";
-      selWrap.append(playerBox, priceLabel, stepHint, confirmBtn, unsoldBtn, cancelBtn);
+      selWrap.append(playerBox, priceLabel, stepHint, confirmBtn, unsoldBtn, releaseBtn, cancelBtn);
 
       assignBar.append(idleHint, selWrap, assignWarn, assignErr);
 
@@ -1882,7 +2458,52 @@
       table.appendChild(tbody);
       main.appendChild(table);
 
-      /* ---------- app tabs (Auction / Teams) ---------- */
+      /* ---------- toast + invariant banner ---------- */
+
+      const toastEl = document.createElement("div");
+      toastEl.className = "toast";
+      toastEl.setAttribute("role", "status");
+      toastEl.setAttribute("aria-live", "polite");
+      toastEl.hidden = true;
+
+      let toastTimer = null;
+      function toast(msg, kind) {
+        toastEl.textContent = msg;
+        toastEl.className = "toast" + (kind ? " " + kind : "");
+        toastEl.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toastEl.hidden = true; }, 7000);
+      }
+
+      const invariantBanner = document.createElement("div");
+      invariantBanner.className = "invariant-banner";
+      invariantBanner.setAttribute("role", "alert");
+      invariantBanner.hidden = true;
+
+      function renderInvariantBanner() {
+        if (!invariantProblems.length) {
+          invariantBanner.hidden = true;
+          invariantBanner.replaceChildren();
+          return;
+        }
+        invariantBanner.hidden = false;
+        const h = document.createElement("div");
+        h.textContent = `⚠ Derived state does not match the player records — ${invariantProblems.length} problem${invariantProblems.length > 1 ? "s" : ""}. Stop and check before continuing.`;
+        const ul = document.createElement("ul");
+        for (const line of invariantProblems.slice(0, 20)) {
+          const li = document.createElement("li");
+          li.textContent = line;
+          ul.appendChild(li);
+        }
+        if (invariantProblems.length > 20) {
+          const li = document.createElement("li");
+          li.textContent = `…and ${invariantProblems.length - 20} more`;
+          ul.appendChild(li);
+        }
+        invariantBanner.replaceChildren(h, ul);
+      }
+
+      /* ---------- app tabs (Auction / Teams / Log) ---------- */
 
       let appView = "auction";
 
@@ -1892,15 +2513,17 @@
 
       const apptabs = document.createElement("div");
       apptabs.className = "apptabs";
-      const tabDefs = [["auction", "Auction"], ["teams", "Teams"]];
-      const tabBtns = tabDefs.map(([key, label]) => {
+      const tabDefs = [["auction", "Auction", ""], ["teams", "Teams", "(T)"], ["log", "Log", "(L)"]];
+      const tabBtns = tabDefs.map(([key, label, keyHint]) => {
         const b = document.createElement("button");
         b.type = "button";
         b.textContent = label;
-        const kbd = document.createElement("span");
-        kbd.className = "kbd";
-        kbd.textContent = "(T)";
-        if (key === "teams") b.appendChild(kbd);
+        if (keyHint) {
+          const kbd = document.createElement("span");
+          kbd.className = "kbd";
+          kbd.textContent = keyHint;
+          b.appendChild(kbd);
+        }
         b.dataset.view = key;
         b.addEventListener("click", () => setView(key));
         return b;
@@ -1998,7 +2621,9 @@
             } else {
               for (const p of inPos) {
                 const row = document.createElement("div");
-                row.className = "team-row";
+                row.className = "team-row clickable";
+                row.title = "Edit price / reassign / revert";
+                row.addEventListener("click", () => openEdit(p));
                 const crestU = imgUrl(CONFIG.imageUrls.club, p.clubId);
                 if (crestU) {
                   const i = new Image(14, 14);
@@ -2061,19 +2686,350 @@
         });
       }
 
+      /* ---------- edit / reassign dialog ----------
+         Opened by picking a sold player (from the auction list or the teams
+         view). Everything it shows about a prospective change is a pure
+         projection computed from the records with this player excluded and
+         then re-added at the candidate manager/price — nothing is stored, so
+         after the change lands every figure is derived afresh as usual. */
+
+      let editPlayer = null;      // the sold player being edited, or null
+      let editTarget = null;      // manager id currently chosen in the dialog
+
+      const editOverlay = document.createElement("div");
+      editOverlay.className = "editoverlay";
+      editOverlay.hidden = true;
+
+      const editDialog = document.createElement("div");
+      editDialog.className = "editdialog";
+      editDialog.setAttribute("role", "dialog");
+      editDialog.setAttribute("aria-modal", "true");
+
+      const editPhotoWrap = document.createElement("div");
+      editPhotoWrap.className = "lot-photo-wrap";
+      const editTitle = document.createElement("div");
+      editTitle.className = "edit-title";
+      const editSub = document.createElement("div");
+      editSub.className = "edit-sub";
+      const editNow = document.createElement("div");
+      editNow.className = "edit-sub";
+      const editHeadInfo = document.createElement("div");
+      editHeadInfo.className = "edit-head-info";
+      editHeadInfo.append(editTitle, editSub, editNow);
+      const editHead = document.createElement("div");
+      editHead.className = "edit-head";
+      editHead.append(editPhotoWrap, editHeadInfo);
+
+      const editPriceLabel = document.createElement("div");
+      editPriceLabel.className = "edit-label";
+      editPriceLabel.textContent = "Price paid";
+      const editPrice = document.createElement("input");
+      editPrice.type = "text";
+      editPrice.className = "price";
+      editPrice.inputMode = "decimal";
+      editPrice.autocomplete = "off";
+      const editPriceBlock = document.createElement("div");
+      editPriceBlock.append(editPriceLabel, editPrice);
+
+      const editMgrLabel = document.createElement("div");
+      editMgrLabel.className = "edit-label";
+      editMgrLabel.textContent = `Owner — click, or ⌥/Alt+1–${MANAGERS.length}`;
+      const editMgrs = document.createElement("div");
+      editMgrs.className = "edit-mgrs";
+      const editMgrBtns = MANAGERS.map(m => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "edit-mgr";
+        const nm = document.createElement("b");
+        const l1 = document.createElement("span");
+        l1.className = "em-line";
+        const l2 = document.createElement("span");
+        l2.className = "em-line";
+        b.append(nm, l1, l2);
+        b._nm = nm; b._l1 = l1; b._l2 = l2;
+        b.addEventListener("click", () => { editTarget = m.id; renderEditDialog(); });
+        return b;
+      });
+      editMgrs.append(...editMgrBtns);
+      const editMgrBlock = document.createElement("div");
+      editMgrBlock.append(editMgrLabel, editMgrs);
+
+      const editErr = document.createElement("div");
+      editErr.className = "edit-msg err";
+      const editWarn = document.createElement("div");
+      editWarn.className = "edit-msg warn";
+
+      const editBody = document.createElement("div");
+      editBody.className = "edit-body";
+      editBody.append(editPriceBlock, editMgrBlock, editErr, editWarn);
+
+      const editSaveBtn = document.createElement("button");
+      editSaveBtn.type = "button";
+      editSaveBtn.className = "primary";
+      editSaveBtn.textContent = "Save ⏎";
+      const editRevertBtn = document.createElement("button");
+      editRevertBtn.type = "button";
+      editRevertBtn.className = "danger";
+      editRevertBtn.textContent = "Revert sale → available";
+      const editCancelBtn = document.createElement("button");
+      editCancelBtn.type = "button";
+      editCancelBtn.textContent = "Cancel (Esc)";
+      const editSpacer = document.createElement("span");
+      editSpacer.className = "spacer";
+      const editFoot = document.createElement("div");
+      editFoot.className = "edit-foot";
+      editFoot.append(editSaveBtn, editCancelBtn, editSpacer, editRevertBtn);
+
+      editDialog.append(editHead, editBody, editFoot);
+      editOverlay.appendChild(editDialog);
+
+      // What the records would say if `p` moved to `targetId` at `price`.
+      // Pure — computed by excluding p from the target's holdings and adding
+      // it back, so it is correct for both a same-manager price edit and a
+      // cross-manager move.
+      function projectFor(targetId, p, price) {
+        let spent = 0, slots = 0, posCount = 0, clubCount = 0;
+        for (const q of ALL) {
+          if (q === p) continue;
+          if (q.status !== "sold" || q.owner !== targetId) continue;
+          spent += Number(q.price) || 0;
+          slots++;
+          if (q.position === p.position) posCount++;
+          if (q.club === p.club) clubCount++;
+        }
+        const remainingExcl = CONFIG.startingBudget - spent;
+        const slotsLeftExcl = CONFIG.squadSize - slots;
+        const maxBidExcl = slotsLeftExcl <= 0
+          ? null
+          : (slotsLeftExcl === 1 ? remainingExcl : remainingExcl - (slotsLeftExcl - 1) * CONFIG.minBid);
+        const valid = isNum(price);
+        return {
+          remainingExcl, slotsExcl: slots, slotsLeftExcl, maxBidExcl,
+          remainingAfter: remainingExcl - (valid ? price : 0),
+          slotsAfter: slots + 1,
+          posCountAfter: posCount + 1,
+          clubCountAfter: clubCount + 1,
+          noRoom: slotsLeftExcl <= 0,
+          overBudget: valid && price > remainingExcl,
+          overMaxBid: valid && maxBidExcl != null && price > maxBidExcl
+        };
+      }
+
+      function readEditPrice() {
+        const raw = editPrice.value.trim();
+        if (raw === "") return { ok: false, msg: "Enter a price." };
+        const price = Number(raw);
+        if (!Number.isFinite(price)) return { ok: false, msg: "Price must be a number." };
+        if (price < CONFIG.minBid) return { ok: false, msg: `Price must be at least ${CONFIG.minBid}.` };
+        return { ok: true, price };
+      }
+
+      function renderEditDialog() {
+        const p = editPlayer;
+        if (!p) return;
+
+        renderLotPhoto(editPhotoWrap, p);
+        editTitle.textContent = p.name;
+        editSub.textContent = `${p.position} · ${p.club} · UEFA value ${fmtVal(p.value)}`;
+        editNow.textContent = `Currently ${stateWords(p)}`;
+
+        const parsed = readEditPrice();
+        const price = parsed.ok ? parsed.price : NaN;
+        const posLim = CONFIG.positionLimits[p.position] || [0, 0];
+        const posMax = posLim[1] || 0;
+        const clubMax = CONFIG.maxPerClub || 0;
+
+        let blockMsg = "", warnMsg = "";
+
+        MANAGERS.forEach((m, i) => {
+          const b = editMgrBtns[i];
+          const proj = projectFor(m.id, p, price);
+          const isCurrent = p.owner === m.id;
+          b._nm.textContent = m.name + (isCurrent ? " · current" : "");
+          b._nm.className = isCurrent ? "em-cur" : "";
+          b._l1.textContent = parsed.ok
+            ? `${fmtMoney(proj.remainingAfter)} left after · ${proj.slotsAfter}/${CONFIG.squadSize} slots`
+            : `${fmtMoney(proj.remainingExcl)} available · ${proj.slotsAfter}/${CONFIG.squadSize} slots`;
+
+          const posTxt = `${p.position} ${proj.posCountAfter}${posMax ? "/" + posMax : ""}`;
+          const clubTxt = `${p.clubCode || p.club} ${proj.clubCountAfter}${clubMax ? "/" + clubMax : ""}`;
+          b._l2.replaceChildren();
+          const posSpan = document.createElement("span");
+          posSpan.textContent = posTxt;
+          if (posMax && proj.posCountAfter > posMax) posSpan.className = "flag-err";
+          const sep = document.createTextNode(" · ");
+          const clubSpan = document.createElement("span");
+          clubSpan.textContent = clubTxt;
+          if (clubMax && proj.clubCountAfter > clubMax) clubSpan.className = "flag-err";
+          b._l2.append(posSpan, sep, clubSpan);
+
+          const blocked = proj.noRoom || proj.overBudget;
+          b.classList.toggle("blocked", blocked);
+          b.classList.toggle("on", editTarget === m.id);
+
+          if (editTarget === m.id) {
+            if (proj.noRoom) {
+              blockMsg = `${m.name}'s squad is already full (${CONFIG.squadSize}/${CONFIG.squadSize}).`;
+            } else if (proj.overBudget) {
+              blockMsg = `${fmtMoney(price)} is over budget — ${m.name} would have ${fmtMoney(proj.remainingExcl)} available for this player.`;
+            } else if (parsed.ok) {
+              const bits = [];
+              if (proj.overMaxBid) {
+                const slotsAfterLeft = proj.slotsLeftExcl - 1;
+                bits.push(`${fmtMoney(price)} exceeds ${m.name}'s max bid (${fmtMoney(proj.maxBidExcl)}) — leaves ${fmtMoney(proj.remainingAfter)} for ${slotsAfterLeft} slot${slotsAfterLeft === 1 ? "" : "s"}`);
+              }
+              if (posMax && proj.posCountAfter > posMax) bits.push(`${p.position} would be ${proj.posCountAfter}/${posMax}`);
+              if (clubMax && proj.clubCountAfter > clubMax) bits.push(`${p.club} would be ${proj.clubCountAfter}/${clubMax}`);
+              if (bits.length) warnMsg = "⚠ " + bits.join(" · ") + ".";
+            }
+          }
+        });
+
+        if (!parsed.ok) blockMsg = blockMsg || parsed.msg;
+        editErr.textContent = blockMsg;
+        editWarn.textContent = blockMsg ? "" : warnMsg;
+        editSaveBtn.disabled = !!blockMsg || editTarget == null;
+        editSaveBtn.textContent = warnMsg && !blockMsg ? "Save anyway ⏎" : "Save ⏎";
+      }
+
+      function openEdit(p) {
+        if (!p || p.status !== "sold") return;
+        if (SELECTED) cancelSelection();
+        editPlayer = p;
+        editTarget = p.owner;
+        editPrice.value = p.price == null ? "" : String(p.price);
+        editOverlay.hidden = false;
+        renderEditDialog();
+        editPrice.focus();
+        editPrice.select();
+      }
+
+      function closeEdit() {
+        editPlayer = null;
+        editTarget = null;
+        editOverlay.hidden = true;
+        editErr.textContent = "";
+        editWarn.textContent = "";
+      }
+
+      function saveEdit() {
+        const p = editPlayer;
+        if (!p) return;
+        const parsed = readEditPrice();
+        if (!parsed.ok) { editErr.textContent = parsed.msg; return; }
+        if (editTarget == null) { editErr.textContent = `Pick a manager (1–${MANAGERS.length}).`; return; }
+
+        const proj = projectFor(editTarget, p, parsed.price);
+        if (proj.noRoom) { renderEditDialog(); return; }
+        if (proj.overBudget) { renderEditDialog(); return; }
+
+        const ownerChanged = p.owner !== editTarget;
+        const priceChanged = p.price !== parsed.price;
+        if (!ownerChanged && !priceChanged) { closeEdit(); return; }
+
+        // One user action = one log entry = one undo step. A move that also
+        // changes the price is logged as a single reassign carrying both.
+        const type = ownerChanged ? "reassign" : "edit_price";
+        const entry = applyChange(p, { status: "sold", owner: editTarget, price: parsed.price }, type);
+        closeEdit();
+        renderAll();
+        toast(`#${entry.seq} ${TYPE_LABEL[type]} — ${describeEntry(entry)}.`);
+      }
+
+      function revertFromEdit() {
+        const p = editPlayer;
+        if (!p) return;
+        const entry = releasePlayer(p);
+        closeEdit();
+        renderAll();
+        if (entry) toast(`#${entry.seq} release — ${describeEntry(entry)}.`);
+      }
+
+      editSaveBtn.addEventListener("click", saveEdit);
+      editCancelBtn.addEventListener("click", closeEdit);
+      editRevertBtn.addEventListener("click", revertFromEdit);
+      editPrice.addEventListener("input", renderEditDialog);
+      editOverlay.addEventListener("mousedown", e => { if (e.target === editOverlay) closeEdit(); });
+
+      /* ---------- transaction log view ---------- */
+
+      const logView = document.createElement("div");
+      logView.className = "logview";
+      logView.hidden = true;
+
+      const logHead = document.createElement("div");
+      logHead.className = "log-head";
+      const logCount = document.createElement("span");
+      const logHint = document.createElement("span");
+      logHint.className = "log-hint";
+      logHint.textContent = "Newest first · append-only, undos are recorded rather than erasing history · ⌘/Ctrl+Z to undo";
+      logHead.append(logCount, logHint);
+
+      const logList = document.createElement("div");
+      logList.className = "log-list";
+
+      logView.append(logHead, logList);
+
+      function renderLog() {
+        const undone = LOG.filter(e => e.undoneBy != null).length;
+        logCount.textContent = LOG.length
+          ? `${LOG.length} action${LOG.length > 1 ? "s" : ""}${undone ? ` · ${undone} undone` : ""}`
+          : "No actions yet";
+
+        if (!LOG.length) {
+          const e = document.createElement("div");
+          e.className = "log-empty";
+          e.textContent = "Nothing has happened yet. Sales, unsold calls, edits, reassignments and undos all show up here.";
+          logList.replaceChildren(e);
+          return;
+        }
+
+        const frag = document.createDocumentFragment();
+        let alt = false;
+        for (let i = LOG.length - 1; i >= 0; i--) {
+          const e = LOG[i];
+          const row = document.createElement("div");
+          row.className = "log-row" + (alt ? " alt" : "") + (e.undoneBy != null ? " undone" : "");
+          alt = !alt;
+
+          const seq = document.createElement("span");
+          seq.className = "log-seq";
+          seq.textContent = "#" + e.seq;
+          if (e.undoneBy != null) seq.title = `Undone by #${e.undoneBy}`;
+
+          const time = document.createElement("span");
+          time.className = "log-time";
+          time.textContent = new Date(e.ts).toLocaleTimeString([], { hour12: false });
+
+          const type = document.createElement("span");
+          type.className = "log-type t-" + e.type;
+          type.textContent = TYPE_LABEL[e.type] || e.type;
+
+          const what = document.createElement("span");
+          what.className = "log-what";
+          what.textContent = describeEntry(e);
+
+          row.append(seq, time, type, what);
+          frag.appendChild(row);
+        }
+        logList.replaceChildren(frag);
+      }
+
       function setView(v) {
         if (v === appView) return;
         if (v !== "auction" && SELECTED) cancelSelection();
         appView = v;
         auctionView.hidden = v !== "auction";
         teamsView.hidden = v !== "teams";
+        logView.hidden = v !== "log";
         tabBtns.forEach(b => b.classList.toggle("on", b.dataset.view === v));
         if (v === "teams") renderTeams();
+        if (v === "log") renderLog();
         if (v === "auction") search.focus();
       }
       tabBtns[0].classList.add("on");
 
-      app.replaceChildren(apptabs, auctionView, teamsView);
+      app.replaceChildren(invariantBanner, apptabs, auctionView, teamsView, logView, editOverlay, toastEl);
 
       // Sticky group headers sit just below the real header row. Two things
       // were wrong before: (1) the measurement used the <tr>, but the sticky
@@ -2255,6 +3211,7 @@
         });
         renderLotPanel();
         renderTeams();
+        renderLog();
       }
 
       /* ---------- assignment bar render ---------- */
@@ -2277,6 +3234,7 @@
         playerBox.append(nm, meta);
 
         priceInput.disabled = phase === "manager";
+        releaseBtn.hidden = SELECTED.status !== "unsold";
         stepHint.textContent = phase === "price"
           ? "type price → Enter"
           : `1–${MANAGERS.length} pick manager → Enter confirm`;
@@ -2304,7 +3262,10 @@
       function setPhase(p) { phase = p; assignBar.dataset.phase = p; }
 
       function selectPlayer(p) {
-        if (!p || p.status === "sold") return;      // sold players are not re-assignable here
+        if (!p) return;
+        // A sold player isn't re-bid — picking one opens the edit/reassign
+        // dialog instead, from wherever it was clicked.
+        if (p.status === "sold") { openEdit(p); return; }
         SELECTED = p;
         pendingManager = null;
         pendingPrice = null;
@@ -2351,18 +3312,33 @@
           assignErr.textContent = `${pendingPrice} over budget — ${m.name} has ${w.remaining} left.`;
           return;
         }
-        SELECTED.owner = m.id;
-        SELECTED.price = pendingPrice;
-        SELECTED.status = "sold";
+        applyChange(SELECTED, { status: "sold", owner: m.id, price: pendingPrice }, "sale");
         endSelection(true);
       }
 
       function markUnsold() {
         if (!SELECTED) return;
-        SELECTED.status = "unsold";
-        SELECTED.owner = null;
-        SELECTED.price = null;
+        applyChange(SELECTED, { status: "unsold", owner: null, price: null }, "unsold");
         endSelection(true);
+      }
+
+      // Back into the available pool — from a sale (price refunded, because
+      // the wallet is re-derived from the records) or from unsold.
+      function releasePlayer(p) {
+        if (!p || p.status === "available") return null;
+        return applyChange(p, { status: "available", owner: null, price: null }, "release");
+      }
+
+      function releaseSelected() {
+        if (!SELECTED || SELECTED.status !== "unsold") return;
+        const entry = releasePlayer(SELECTED);
+        endSelection(true);
+        if (entry) toast(`#${entry.seq} release — ${describeEntry(entry)}.`);
+      }
+
+      // Every derived figure is recomputed here; nothing is patched in place.
+      function renderAll() {
+        render({ preserveScroll: true });
       }
 
       function cancelSelection() {
@@ -2405,7 +3381,11 @@
 
       // Selection owns the keyboard once a player is picked.
       function routeKey(e) {
-        if (phase === "browse") return;
+        if (editPlayer) return;              // the dialog owns the keyboard while it's open
+        if (phase === "browse" || !SELECTED) return;
+        if (SELECTED.status === "unsold" && (e.key === "r" || e.key === "R")) {
+          e.preventDefault(); releaseSelected(); return;
+        }
         if (e.key === "Escape") { e.preventDefault(); cancelSelection(); return; }
         if (e.key === "u" || e.key === "U") { e.preventDefault(); markUnsold(); return; }
 
@@ -2440,10 +3420,46 @@
         return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
       }
       document.addEventListener("keydown", e => {
+        if (editPlayer) return;
         if (isTypingTarget(e.target)) return;
         if (e.key === "t" || e.key === "T") {
           e.preventDefault();
           setView(appView === "teams" ? "auction" : "teams");
+        } else if (e.key === "l" || e.key === "L") {
+          e.preventDefault();
+          setView(appView === "log" ? "auction" : "log");
+        }
+      });
+
+      // Undo: ⌘/Ctrl+Z. A modifier chord, so it cannot fire from ordinary
+      // typing — which is why it is safe to leave unguarded by focus, and it
+      // needs to be: after a sale the focus is back in the search box, which
+      // is exactly the moment you reach for undo.
+      document.addEventListener("keydown", e => {
+        if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+        if (e.key !== "z" && e.key !== "Z") return;
+        if (e.shiftKey) return;              // no redo — leave ⇧⌘Z alone
+        e.preventDefault();
+        if (editPlayer) closeEdit();
+        performUndo();
+      });
+
+      // Dialog-local keys. The price field holds focus while the dialog is
+      // open (that's the field you usually came to change), so plain digits
+      // must go to it — Alt+digit is the manager picker, matched on e.code
+      // because Option+1 types "¡" on a Mac.
+      document.addEventListener("keydown", e => {
+        if (!editPlayer) return;
+        if (e.key === "Escape") { e.preventDefault(); closeEdit(); return; }
+        if (e.key === "Enter") { e.preventDefault(); saveEdit(); return; }
+        for (let n = 1; n <= MANAGERS.length && n <= 9; n++) {
+          const wanted = "Digit" + n;
+          if (e.code !== wanted && e.key !== String(n)) continue;
+          if (!e.altKey && e.target === editPrice) return;   // typing a price
+          e.preventDefault();
+          editTarget = MANAGERS[n - 1].id;
+          renderEditDialog();
+          return;
         }
       });
 
@@ -2464,8 +3480,10 @@
 
       confirmBtn.addEventListener("click", () => confirmAssignment());
       unsoldBtn.addEventListener("click", () => markUnsold());
+      releaseBtn.addEventListener("click", () => releaseSelected());
       cancelBtn.addEventListener("click", () => cancelSelection());
 
+      checkInvariants();     // baseline: the freshly loaded records must be consistent
       render();
       search.focus();
     }
