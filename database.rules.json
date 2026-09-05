@@ -13,9 +13,13 @@
   //              the display name, and the uid holding it (if any).
   //   requests   pending first-time claims, keyed by the asking uid.
   //   lot        the player currently on the block, and the live
-  //              bidding on it. The host opens and closes it; the
-  //              seated managers raise it. This is the only node a
-  //              manager writes during an auction.
+  //              bidding on it. The host closes it; the host or the
+  //              manager whose turn it is opens it; the seated
+  //              managers raise it.
+  //   turn       whose turn it is to nominate the next player, and how
+  //              long they have left. Host-written, room-read.
+  //
+  // `lot` is the only node a manager writes during an auction.
   //
   // A '.write' granted at an ancestor cascades down and cannot be
   // revoked by a child, so there is deliberately NO '.write' at
@@ -92,6 +96,22 @@
             }
           },
 
+          // Sold players, keyed by player id. Everything else in `state` is
+          // for viewers to read; this one child exists for THESE RULES to
+          // read. `players` above is a LIST, and nothing here can search a
+          // list — so the nomination rule below, which must refuse a
+          // nomination on a player who has already gone, needs the same fact
+          // keyed by id. Written from the same records in the same loop as
+          // `players` (see buildLivePayload), so the two cannot disagree.
+          //
+          // It is only as fresh as the last publish, which is debounced by
+          // LIVE_CFG.publishDebounceMs. A nomination in that window is caught
+          // by the client check instead — and by the transaction on `lot`,
+          // which refuses to open a lot on top of one that is already open.
+          "sold": {
+            "$pid": { ".validate": "newData.isBoolean() && newData.val() === true" }
+          },
+
           "log": {
             "$index": {
               ".validate": "newData.hasChildren(['seq', 'type', 'text'])",
@@ -160,14 +180,59 @@
         },
 
         // ============================================================
+        // Whose turn it is to nominate.
+        //
+        //   turn/seat         the seat whose turn it is       host only
+        //   turn/deadline     when that turn runs out         host only
+        //   turn/paused       true while the host froze it    host only
+        //   turn/remainingMs  ms banked when it froze         host only
+        //
+        // ALL of it is host-only: there is no '.write' anywhere below this
+        // node, so the only grant it is reachable through is the one on
+        // `turn` itself. That is the point. A manager who could write here
+        // could hand themselves the next nomination, and one who could write
+        // `deadline` could give themselves an extra minute to think. Setting
+        // the turn, advancing it, and skipping a nominator are the same
+        // write, and it is the host's.
+        //
+        // Reads are open to the room, like everything else here — every
+        // client draws the nomination clock from `deadline` against its own
+        // .info/serverTimeOffset, exactly as it draws the lot clock.
+        //
+        // Pause works the way it works on a lot: bank what was left, clear
+        // the deadline. Clearing the deadline is not bookkeeping — it is what
+        // makes the nomination clause below refuse every nomination while the
+        // room is frozen, without that clause needing to know what pausing
+        // is. '.validate' is skipped on deletes, so the host can always
+        // remove the node (which is what "nobody can nominate" looks like).
+        // ============================================================
+        "turn": {
+          ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && root.child('rooms').child($room).child('host').child('uid').val() === auth.uid",
+          ".validate": "newData.hasChildren(['seat'])",
+
+          "seat": { ".validate": "newData.isString() && newData.val().matches(/^m[0-9]{1,2}$/)" },
+          "deadline": { ".validate": "newData.isNumber()" },
+          "paused": { ".validate": "newData.isBoolean() && newData.val() === true" },
+          "remainingMs": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3600000" },
+          "$other": { ".validate": false }
+        },
+
+        // ============================================================
         // The open lot. One node carries the whole of live bidding:
         //
-        //   lot/player       who is on the block             host only
-        //   lot/openedAt     when it was opened              host only
+        //   lot/player       who is on the block             host, or the
+        //   lot/openedAt     when it was opened              manager whose
+        //   lot/nom          the seat that nominated, if any turn it is
         //   lot/paused       true while frozen               host only
         //   lot/remainingMs  ms banked when it froze         host only
         //   lot/bid          { seq, price, seat, uid, at,
         //                      deadline }                    the room
+        //
+        // A lot opens one of two ways. The host opens one on any player at
+        // any time — the correction path, and how this stage's predecessor
+        // ran the whole auction. Or the manager whose turn it is NOMINATES
+        // one, which opens it with their own bid already standing at the
+        // minimum. Only the host ever closes one.
         //
         // THE CLOCK. `bid/deadline` is when this lot ends, in server time.
         // It sits inside `bid` and not beside `openedAt` because a late bid
@@ -203,7 +268,7 @@
         // unchanged, so a tap still in flight when the host moves on cannot
         // land on the next player's lot.
         //
-        // Only the host opens or closes a lot, and that grant sits on `lot`
+        // Only the host CLOSES a lot, and the host's grant sits on `lot`
         // so a single set() can write the player and the opening price
         // together and a single remove() can close it. A '.write' cascades
         // down, so it also lets the host write `lot/bid` directly: the
@@ -213,12 +278,69 @@
         // constraining their bids would be theatre. Their own raises go
         // through the same client transaction as everyone else's.
         // ============================================================
+        // NOMINATION. The second clause of the '.write' below is the one
+        // write a seated manager makes that CREATES a lot rather than
+        // raising one, and every clause in it is doing a job:
+        //
+        //   nothing is open        !data.exists() — a nomination may only
+        //                          ever open an empty block, so it can
+        //                          neither replace a running lot nor (with
+        //                          newData.exists()) close one. Closing
+        //                          stays the host's, unchanged.
+        //   the turn is theirs     turn/seat names the seat in `nom`, and
+        //                          that seat is held by the calling uid.
+        //                          Both halves are needed: one without the
+        //                          other is either nominating out of turn or
+        //                          nominating as somebody else.
+        //   the turn is running    turn/deadline exists and `now` is still
+        //                          before it, and the room is not paused —
+        //                          pausing clears that deadline, so the
+        //                          second check is the first one twice on
+        //                          purpose.
+        //   not already sold       state/sold is the host's published
+        //                          sale set, keyed by player id (see the
+        //                          `sold` comment above). This is the only
+        //                          thing here that can go stale, by at most
+        //                          one publish debounce.
+        //   the opening bid is     price === 1 is CONFIG.minBid, duplicated
+        //   theirs, at the floor   here the way LIVE_CFG.raiseSteps is
+        //                          duplicated in the bid rule below — change
+        //                          it there and it must change here. The
+        //                          nominator's own seat and uid hold it, so
+        //                          "nominating is a bid at the minimum" is
+        //                          enforced rather than merely intended.
+        //   the clock is honest    the lot's own deadline is in the future
+        //                          and no more than 17s out — that is
+        //                          LIVE_CFG.lotDurationMs (15000) plus
+        //                          clockToleranceMs (2000), the same give
+        //                          and the same bound the bid rule allows.
+        //   seq is of this moment  bounded to a minute either side of now,
+        //                          so a nomination cannot be stamped with a
+        //                          seq from far in the past or future.
+        //   no pause fields        pausing is the host's, and this write
+        //                          reaches the whole node.
+        //
+        // What is NOT enforced here, and cannot be: whether the nominator can
+        // afford the player, and whether they have a squad slot left. That is
+        // the same computeBid() the bid rule can't reach either (see the
+        // header of this file) — a manager who is full or broke is skipped by
+        // the HOST when it advances the rotation, which is a client-side
+        // decision. A hand-written request from a seat whose turn it
+        // genuinely is could nominate anyway; the host's resolution would
+        // then refuse the sale, loudly, exactly as it does for a bid past a
+        // max bid today.
         "lot": {
-          ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && root.child('rooms').child($room).child('host').child('uid').val() === auth.uid",
+          ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && (root.child('rooms').child($room).child('host').child('uid').val() === auth.uid || (!data.exists() && newData.exists() && newData.child('nom').isString() && root.child('rooms').child($room).child('turn').child('seat').val() === newData.child('nom').val() && root.child('rooms').child($room).child('seats').child(newData.child('nom').val()).child('uid').val() === auth.uid && !root.child('rooms').child($room).child('turn').child('paused').exists() && root.child('rooms').child($room).child('turn').child('deadline').isNumber() && now < root.child('rooms').child($room).child('turn').child('deadline').val() && newData.child('player').isString() && !root.child('rooms').child($room).child('state').child('sold').child(newData.child('player').val()).exists() && newData.child('bid').child('seat').val() === newData.child('nom').val() && newData.child('bid').child('uid').val() === auth.uid && newData.child('bid').child('price').val() === 1 && newData.child('bid').child('seq').isNumber() && newData.child('bid').child('seq').val() > now - 60000 && newData.child('bid').child('seq').val() < now + 60000 && newData.child('bid').child('deadline').isNumber() && newData.child('bid').child('deadline').val() > now && newData.child('bid').child('deadline').val() <= now + 17000 && !newData.child('paused').exists() && !newData.child('remainingMs').exists()))",
           ".validate": "newData.hasChildren(['player', 'bid'])",
 
           "player": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64" },
           "openedAt": { ".validate": "newData.isNumber()" },
+
+          // Who opened this lot, when a manager did. Absent on a lot the host
+          // opened by hand — which is exactly how the host tells an override
+          // (consumes nobody's turn) from a nomination (advances the
+          // rotation when it settles).
+          "nom": { ".validate": "newData.isString() && newData.val().matches(/^m[0-9]{1,2}$/)" },
 
           "bid": {
             // A raise. The one write a seated manager makes during an

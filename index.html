@@ -2038,6 +2038,43 @@
       display: none;
     }
 
+    /* ---------- the nomination row ----------
+       What the room looks like BETWEEN lots. Deliberately the bid row's
+       quieter twin — one surface level down, the same clock, the same
+       chip — because it is the same auction in a different beat, not a
+       different screen. The two are never up together: a lot on the block
+       hides this row and the bid row takes its place. */
+    .turnbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 7px 14px;
+      background: var(--surface-1);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .turnbar[hidden] {
+      display: none;
+    }
+
+    /* The turn clock is a slower, less shouty thing than the last five
+       seconds of a lot — forty-five seconds of someone reading a list. */
+    .turnbar .bid-clock {
+      min-width: 74px;
+    }
+
+    .turnbar .bid-clock-num {
+      font-size: 26px;
+    }
+
+    /* "Your turn" is the one chip in the app that isn't a manager colour:
+       it is about this device, not about a manager, so it takes the same
+       neutral selection marker the keyboard highlight uses. */
+    .turnbar .bid-who.mine {
+      color: var(--select-text);
+    }
+
     .bid-label {
       color: var(--muted);
       text-transform: uppercase;
@@ -2351,8 +2388,27 @@
         order: -2;
       }
 
-      body.viewer .bidbar {
+      body.viewer .bidbar,
+      body.viewer .turnbar {
         order: -1;
+      }
+
+      body.viewer .turnbar {
+        padding: 8px 10px;
+        gap: 8px;
+      }
+
+      body.viewer .turnbar .bid-clock {
+        width: auto;
+        flex-direction: column;
+      }
+
+      body.viewer .turnbar .bid-clock-num {
+        font-size: 30px;
+      }
+
+      body.viewer .turnbar .bid-note {
+        width: 100%;
       }
 
       body.viewer .bid-clock {
@@ -2592,7 +2648,14 @@
     // buttons: [{ label, kind: "primary"|"danger"|undefined, onClick }]
     // No backdrop-click / Escape dismissal — these dialogs exist specifically
     // to force an explicit choice, never a silent default.
-    function showConfirm({ title, sub, lines, buttons }) {
+    //
+    // `focus` is the index of a button to put the keyboard on, and it is
+    // opt-in for exactly that reason: a focused button answers Enter, which
+    // is right for a dialog that stands in the middle of a keyboard flow the
+    // host is already driving with Enter, and wrong for every dialog here
+    // that guards a destructive choice. Nothing is focused unless a caller
+    // asks for it by index.
+    function showConfirm({ title, sub, lines, buttons, focus }) {
       const { overlay, title: t, sub: s, body, foot } = buildConfirmDialog();
       t.textContent = title;
       if (sub) s.textContent = sub; else s.remove();
@@ -2612,6 +2675,7 @@
         foot.appendChild(btn);
       }
       document.body.appendChild(overlay);
+      if (isNum(focus) && foot.children[focus]) foot.children[focus].focus();
       return close;
     }
 
@@ -2703,6 +2767,22 @@
       // bounds the abuse too: the furthest any bid can push a deadline is
       // extendMs + this.
       clockToleranceMs: 2000,
+
+      // ---- the nomination clock ----
+      // A manager's turn to put a player up runs on its own, longer clock,
+      // built on exactly the same mechanism as the lot clock above: the host
+      // publishes a deadline in server time at `rooms/$room/turn/deadline`
+      // and every client subtracts its OWN .info/serverTimeOffset estimate
+      // from it. Nothing counts down locally, here or there.
+      //
+      // Deliberately much longer than a lot: choosing a player out of nine
+      // hundred is a slower act than tapping a raise button. On expiry the
+      // host passes the turn on — see maintainTurn().
+      //
+      // Only ever ticking while NO lot is open. A lot on the block owns the
+      // clock; the turn's deadline is reset the moment the rotation moves,
+      // so a long lot never eats into the next nominator's time.
+      nominateMs: 45000,
 
       // How often the countdown repaints AND how often the host re-checks
       // whether a deadline has passed. The check is a comparison against
@@ -2828,11 +2908,14 @@
         requests: {},          // requesting uid -> { seat, at }
         seatsReady: false,     // has the seat list arrived at least once?
         seatError: "",         // last seat write that failed, if any
-        lot: null,             // the open lot: { player, openedAt, bid: {...} }
+        lot: null,             // the open lot: { player, openedAt, nom?, bid: {...} }
         lotError: "",          // last host open/close that failed, if any
+        turn: null,            // whose turn it is to nominate: { seat, deadline?, paused?, remainingMs? }
+        turnError: "",         // last host turn write that failed, if any
         onStatus: null,        // set by the UI
         onSeats: null,         // set by the UI
         onLot: null,           // set by the UI (both roles)
+        onTurn: null,          // set by the UI (both roles)
         onRemoteState: null    // set by the UI (viewer only)
       };
 
@@ -2864,6 +2947,10 @@
         // Same contract again. A bid arriving from another device must never
         // be able to throw its way into the host's assignment flow.
         if (L.onLot) { try { L.onLot(L); } catch (e) { /* ignore */ } }
+      }
+
+      function turnChanged() {
+        if (L.onTurn) { try { L.onTurn(L); } catch (e) { /* ignore */ } }
       }
 
       /* ---- identity ----
@@ -3109,6 +3196,11 @@
           // there.
           closeLot();
           watchLot();
+          // The turn survives a host reload on purpose: it is the room's
+          // rotation, not this session's. A turn left behind with a stale
+          // deadline is simply expired, and maintainTurn() passes it on at
+          // the first tick.
+          watchTurn();
           status();
           window.addEventListener("pagehide", releaseHost);
           return { ok: true };
@@ -3461,6 +3553,143 @@
         );
       }
 
+      /* ---- whose turn it is to nominate ----
+         `rooms/$room/turn` is one small node, written by the host and by
+         nobody else, read by every client:
+
+           turn/seat         the seat whose turn it is        host only
+           turn/deadline     when that turn runs out          host only
+           turn/paused       true while the host has it frozen
+           turn/remainingMs  ms banked when it froze
+
+         The point of publishing it rather than deriving it is that four
+         devices computing "whose turn is it" from the seat list and the
+         sale history would agree right up until one of them was a snapshot
+         behind — and then two people would be nominating at once. There is
+         one writer, so there is one answer.
+
+         The clock is the lot clock's mechanism reused rather than copied:
+         a deadline in server time that each client reads against its own
+         .info/serverTimeOffset. Nothing counts down locally. Pause is the
+         same trick pauseLot() uses — bank what was left, clear the deadline
+         — and clearing the deadline is what makes the nomination rule in
+         database.rules.json refuse a nomination while the room is frozen,
+         without that rule needing to know what pausing is.
+
+         This node is deliberately NOT part of the published `state`
+         snapshot: state is debounced and rewritten whole on every sale,
+         and whose turn it is has to move the instant a lot ends. */
+
+      function turnRef() { return fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/turn`); }
+
+      function watchTurn() {
+        fb.onValue(turnRef(), snap => {
+          L.turn = snap.val() || null;
+          turnChanged();
+        }, () => { L.turn = null; turnChanged(); });
+      }
+
+      // Host only. One set(), so the seat and the deadline it runs to can
+      // never disagree — a turn with somebody else's clock on it would be
+      // worse than no turn at all.
+      function setTurn(seatId) {
+        if (!fb || !L.enabled || L.role !== "host") return Promise.resolve();
+        return fb.set(turnRef(), {
+          seat: String(seatId),
+          // Server-corrected local time, the same compromise openLot() makes:
+          // there is no way to add 45 seconds to a serverTimestamp() sentinel.
+          deadline: serverNow() + LIVE_CFG.nominateMs
+        }).then(() => { L.turnError = ""; }, e => { L.turnError = errText(e); status(); });
+      }
+
+      // No seat can nominate — everyone is full, unseated or out of budget.
+      // Removing the node is what says so: the rules refuse every nomination
+      // with no turn to match against, exactly as removing `lot` refuses
+      // every bid.
+      function clearTurn() {
+        if (!fb || L.role !== "host") return Promise.resolve();
+        return fb.remove(turnRef()).then(() => { L.turnError = ""; }, e => { L.turnError = errText(e); status(); });
+      }
+
+      function pauseTurn() {
+        if (!fb || !L.enabled || L.role !== "host") return Promise.resolve();
+        const t = L.turn;
+        if (!t || !t.seat || t.paused === true || !isNum(t.deadline)) return Promise.resolve();
+        const left = Math.max(0, Math.round(t.deadline - serverNow()));
+        return fb.update(turnRef(), {
+          paused: true,
+          remainingMs: left,
+          deadline: null
+        }).then(() => { L.turnError = ""; }, e => { L.turnError = errText(e); status(); });
+      }
+
+      function resumeTurn() {
+        if (!fb || !L.enabled || L.role !== "host") return Promise.resolve();
+        const t = L.turn;
+        if (!t || !t.seat || t.paused !== true) return Promise.resolve();
+        const left = isNum(t.remainingMs) ? Math.max(0, t.remainingMs) : LIVE_CFG.nominateMs;
+        return fb.update(turnRef(), {
+          paused: null,
+          remainingMs: null,
+          deadline: serverNow() + left
+        }).then(() => { L.turnError = ""; }, e => { L.turnError = errText(e); status(); });
+      }
+
+      /* Nominating. The second write a seated manager makes — and the only
+         one that CREATES a lot rather than raising one.
+
+         It is a transaction on the same node openLot() sets, for the same
+         reason placeBid() is one: the host can open a lot on any player at
+         any moment, so "there is no lot right now" has to be decided by the
+         server at commit time and not by what this screen was showing when
+         the finger landed. A nomination that arrives a moment after the host
+         has opened something returns nothing and commits nothing.
+
+         The bid it opens with is the nominator's own, at CONFIG.minBid. That
+         is the whole difference from openLot(): the host's opening is a
+         price with nobody behind it, a nomination is a standing bid. If
+         nobody raises, the nominator buys the player at the minimum, and
+         resolution sells it to them through exactly the path a contested lot
+         takes — there is no separate "nobody bid on their own nomination"
+         case anywhere below.
+
+         `nom` records who opened it. The host reads it for two things: to
+         follow a lot it did not open (so resolution has a selected player),
+         and to know whether ending this lot should advance the rotation. A
+         lot the host opened by hand carries no `nom` and consumes nobody's
+         turn. */
+      function nominate(playerId) {
+        if (!fb || !L.enabled) return Promise.resolve({ ok: false, reason: "not connected" });
+        const seat = mySeat();
+        if (!seat) return Promise.resolve({ ok: false, reason: "you are not seated" });
+        const t = L.turn;
+        if (!t || t.seat !== seat.id) return Promise.resolve({ ok: false, reason: "it is not your turn" });
+        if (t.paused === true) return Promise.resolve({ ok: false, reason: "the host has paused the auction" });
+        if (!isNum(t.deadline)) return Promise.resolve({ ok: false, reason: "the host has paused the auction" });
+        if (serverNow() >= t.deadline) return Promise.resolve({ ok: false, reason: "your turn ran out" });
+        const now = serverNow();
+        let reason = "";
+        return fb.runTransaction(lotRef(), cur => {
+          if (cur) { reason = "a player is already on the block"; return; }
+          return {
+            player: String(playerId),
+            openedAt: now,
+            nom: seat.id,
+            bid: {
+              seq: now,
+              price: CONFIG.minBid,
+              seat: seat.id,
+              uid: L.uid,
+              at: now,
+              deadline: now + LIVE_CFG.lotDurationMs
+            }
+          };
+        }, { applyLocally: false }).then(
+          res => res.committed ? { ok: true } : { ok: false, reason: reason || "it did not land" },
+          err => ({ ok: false, reason: errText(err) })
+        );
+      }
+
       /* ---- publishing (host) ---- */
 
       // Never awaited by a caller, never on the keyboard path: the click
@@ -3517,6 +3746,7 @@
           startAuth().catch(() => { /* surfaced as L.authError in the seat bar */ });
           watchSeats();
           watchLot();
+          watchTurn();
 
           fb.onValue(fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/state`), snap => {
             L.lastReceiveAt = Date.now();
@@ -3586,6 +3816,12 @@
       L.placeBid = placeBid;
       L.pauseLot = pauseLot;
       L.resumeLot = resumeLot;
+
+      L.nominate = nominate;
+      L.setTurn = setTurn;
+      L.clearTurn = clearTurn;
+      L.pauseTurn = pauseTurn;
+      L.resumeTurn = resumeTurn;
       return L;
     }
 
@@ -4516,6 +4752,72 @@
       bidBtnWrap.append(...bidButtons);
       bidBar.append(clockEl, pauseBtn, bidLabel, bidPriceEl, bidWhoEl, bidBtnWrap, bidNoteEl);
 
+      /* ---------- the nomination row ----------
+         The bid row's opposite number, and never on screen at the same time
+         as it: this row is what the auction looks like BETWEEN lots, when
+         somebody has to put the next player up. Same clock, same colours,
+         same published-deadline arithmetic — the only new idea on it is
+         whose turn it is, and that is read from `turn/seat` rather than
+         worked out here.
+
+         Built once and updated in place for the same reason the bid row is:
+         it repaints five times a second for forty-five seconds at a stretch,
+         and the Skip button under the host's finger must not be replaced
+         mid-tap. */
+
+      const turnBar = document.createElement("div");
+      turnBar.className = "turnbar";
+      turnBar.hidden = true;
+
+      const turnClockEl = document.createElement("div");
+      turnClockEl.className = "bid-clock";
+      const turnClockNum = document.createElement("div");
+      turnClockNum.className = "bid-clock-num";
+      turnClockNum.setAttribute("role", "status");
+      turnClockNum.setAttribute("aria-live", "off");
+      const turnClockCap = document.createElement("div");
+      turnClockCap.className = "bid-clock-cap";
+      const turnClockBar = document.createElement("div");
+      turnClockBar.className = "bid-clock-bar";
+      const turnClockFill = document.createElement("i");
+      turnClockBar.appendChild(turnClockFill);
+      turnClockEl.append(turnClockNum, turnClockCap, turnClockBar);
+
+      const turnLabel = document.createElement("span");
+      turnLabel.className = "bid-label";
+      turnLabel.textContent = "Nominating";
+
+      const turnWhoEl = document.createElement("span");
+      turnWhoEl.className = "bid-who";
+
+      const turnNoteEl = document.createElement("span");
+      turnNoteEl.className = "bid-note";
+      turnNoteEl.setAttribute("role", "status");
+      turnNoteEl.setAttribute("aria-live", "polite");
+
+      // Host only. Skipping is a write to `turn`, exactly like the clock
+      // running out — the host is doing by hand what the deadline would do
+      // on its own in a few seconds.
+      const turnSkipBtn = document.createElement("button");
+      turnSkipBtn.type = "button";
+      turnSkipBtn.className = "bid-pause";
+      turnSkipBtn.textContent = "Skip";
+      turnSkipBtn.title = "Pass this turn to the next manager in seat order";
+      turnSkipBtn.hidden = true;
+
+      // The same P as the lot clock, and deliberately the same button style:
+      // to the room, pausing between lots and pausing mid-lot are one act.
+      const turnPauseBtn = document.createElement("button");
+      turnPauseBtn.type = "button";
+      turnPauseBtn.className = "bid-pause";
+      turnPauseBtn.textContent = "Pause (P)";
+      turnPauseBtn.hidden = true;
+
+      turnSkipBtn.addEventListener("click", () => skipNominator());
+      turnPauseBtn.addEventListener("click", () => togglePause());
+
+      turnBar.append(turnClockEl, turnPauseBtn, turnSkipBtn, turnLabel, turnWhoEl, turnNoteEl);
+
       // One bid in flight at a time. A round trip is tens of milliseconds, and
       // two overlapping taps from the same device would be racing themselves:
       // the second would carry the price the first is already replacing, and
@@ -4649,12 +4951,387 @@
         return c.kind;
       }
 
+      /* One P, two clocks. Between lots there is no lot to freeze, and the
+         thing that is running is somebody's turn to nominate — so the same
+         key freezes that instead. The lot always wins when both exist,
+         which is every moment a lot is open (the turn clock is suppressed
+         then, see turnClock()). */
       function togglePause() {
         if (READONLY) return;
         const c = lotClock();
-        if (!c) return;
-        if (c.kind === "paused") LIVE.resumeLot();
-        else if (c.kind === "running" || c.kind === "urgent") LIVE.pauseLot();
+        if (c) {
+          if (c.kind === "paused") LIVE.resumeLot();
+          else if (c.kind === "running" || c.kind === "urgent") LIVE.pauseLot();
+          return;
+        }
+        const t = turnClock();
+        if (!t) return;
+        if (t.kind === "paused") LIVE.resumeTurn();
+        else if (t.kind === "running" || t.kind === "urgent") LIVE.pauseTurn();
+      }
+
+      /* ============================================================
+         ROTATING NOMINATION
+         ------------------------------------------------------------
+         Managers, not the host, choose who goes up. Each seated manager
+         gets a turn in seat order; nominating opens the lot with the
+         nominator's own bid already standing at CONFIG.minBid.
+
+         WHOSE TURN IT IS is published state — `rooms/$room/turn`, written
+         by the host and by nobody else — and never derived. Four devices
+         each working out "it must be Savya next" from the seat list and
+         the sale history would agree until one of them was one snapshot
+         behind, and then two people would nominate at once. There is one
+         writer of that node, so there is exactly one answer, and every
+         screen (including the host's) reads it rather than computing it.
+
+         THE ORDER is the seat index and nothing else: sortedSeatIds() is
+         the same seat order the seat bar draws, sorted by manager id. No
+         separate rotation list exists to fall out of step with the seats.
+
+         SKIPPING. A manager who cannot nominate is passed over rather than
+         stalling the room — squad full, or can't afford the minimum bid,
+         both straight out of computeBid(), the same figure the bid row and
+         the lot panel print. A seat nobody is sitting in is skipped too:
+         there is no device to nominate from.
+
+         THE CLOCK is the lot clock's mechanism, not a copy of it — a
+         deadline published in server time, read against each client's own
+         serverTimeOffset, never counted down locally. It runs only while
+         no lot is open: a lot on the block owns the clock, and the next
+         turn gets a full, fresh deadline when the rotation moves.
+
+         WHO ACTS ON THE DEADLINE is the host alone, exactly as with lot
+         resolution — viewers watch it reach zero and wait for the write. */
+
+      function turnSeatId() {
+        const t = LIVE.turn;
+        return t && t.seat ? String(t.seat) : null;
+      }
+
+      function turnManager() {
+        const id = turnSeatId();
+        const seat = id ? LIVE.seats[id] : null;
+        return seat ? (MANAGERS[seat.manager] || null) : null;
+      }
+
+      function isMyTurn() {
+        const seat = LIVE.mySeat();
+        const id = turnSeatId();
+        return !!(seat && id && seat.id === id);
+      }
+
+      function lotOpen() { return !!LIVE.lot; }
+
+      // Can this seat put a player up right now? Nothing new is computed
+      // here: computeBid() is the existing max-bid/squad calculation, and
+      // "normal" is exactly its own word for "has a slot and can afford the
+      // minimum". A seat with no device on it can't nominate either — there
+      // is nobody there to choose.
+      function seatCanNominate(seatId) {
+        const s = LIVE.seats[seatId];
+        if (!s || !s.uid) return false;
+        const m = MANAGERS[s.manager];
+        if (!m) return false;
+        return computeBid(m).state === "normal";
+      }
+
+      // Same shape as lotClock(), same arithmetic, same rules about what is
+      // read rather than counted. Returns null when there is nothing to
+      // count — including whenever a lot is on the block, which is what
+      // stops a long lot from eating the next nominator's forty-five
+      // seconds.
+      function turnClock() {
+        if (!LIVE.enabled) return null;
+        const t = LIVE.turn;
+        if (!t || !t.seat) return null;
+        if (lotOpen()) return null;
+        if (t.paused === true) {
+          return { kind: "paused", left: isNum(t.remainingMs) ? Math.max(0, t.remainingMs) : 0 };
+        }
+        if (!isNum(t.deadline)) return { kind: "none", left: 0 };
+        const left = t.deadline - LIVE.serverNow();
+        if (left <= 0) return { kind: "expired", left: 0 };
+        return { kind: left <= LIVE_CFG.urgentMs ? "urgent" : "running", left };
+      }
+
+      // The next seat in seat order that can actually nominate, starting
+      // after `afterSeatId` and wrapping. A seat id that isn't in the list
+      // (or null) starts the scan at the top. Returns null when nobody can.
+      function nextNominator(afterSeatId) {
+        const ids = sortedSeatIds();
+        if (!ids.length) return null;
+        const start = ids.indexOf(afterSeatId);       // -1 → begin at the first seat
+        for (let k = 1; k <= ids.length; k++) {
+          const id = ids[(start + k + ids.length) % ids.length];
+          if (seatCanNominate(id)) return id;
+        }
+        return null;
+      }
+
+      /* Host only, from here down. One write to `turn` at a time, and a
+         short hold-off after a failure: maintainTurn() runs on the same
+         200ms tick the clock does, and a rejected write it retried every
+         tick would be five writes a second for as long as the problem
+         lasted. */
+      let turnWritePending = false;
+      let turnRetryAt = 0;
+
+      function turnWrite(run) {
+        if (turnWritePending) return;
+        turnWritePending = true;
+        Promise.resolve().then(run).then(
+          () => { turnWritePending = false; },
+          () => { turnWritePending = false; turnRetryAt = Date.now() + 2000; }
+        );
+      }
+
+      // `from` is the seat the rotation is moving on FROM, and it defaults to
+      // whatever the published turn says. endSelection passes the seat that
+      // actually nominated instead: a nomination landing in the last fraction
+      // of a turn can commit just after this host has already passed the turn
+      // on, and advancing from the published seat would then skip somebody
+      // who never got a go.
+      function advanceTurn(from) {
+        if (READONLY || !LIVE.enabled || LIVE.lostRoom) return;
+        const next = nextNominator(from === undefined ? turnSeatId() : from);
+        if (next) { turnWrite(() => LIVE.setTurn(next)); return; }
+        // Nobody left who can nominate. Clear it rather than leave a turn
+        // pointing at someone who can't take it — with no turn, the rules
+        // refuse every nomination and the host runs the rest by hand.
+        if (LIVE.turn) turnWrite(() => LIVE.clearTurn());
+      }
+
+      function skipNominator() {
+        if (READONLY || !LIVE.enabled) return;
+        const m = turnManager();
+        if (!turnSeatId()) return;
+        advanceTurn();
+        toast(m ? `Skipped ${m.name} — the turn passes on.` : "Turn passed on.");
+      }
+
+      /* The rotation's only automatic mover, and the host's alone. Runs on
+         the clock tick rather than on a timer set to fire at the deadline,
+         for the same reason resolution does: a backgrounded tab throttles
+         timers and a sleeping laptop stops them, so lateness has to be
+         survivable rather than prevented. A host away for two minutes
+         passes the turn on at its first tick back.
+
+         Silent while a lot is open — the lot owns the clock — and while a
+         write is in flight, so one expiry produces one advance. */
+      function maintainTurn() {
+        if (READONLY || !LIVE.enabled || LIVE.lostRoom) return;
+        if (!LIVE.connected || !LIVE.seatsReady) return;
+        if (turnWritePending || Date.now() < turnRetryAt) return;
+        if (lotOpen()) return;
+
+        const t = LIVE.turn;
+        const cur = turnSeatId();
+
+        // No turn, or one pointing at a seat that no longer exists: start
+        // (or restart) the rotation at the first seat that can nominate.
+        if (!cur || !LIVE.seats[cur]) {
+          const next = nextNominator(cur);
+          if (next) turnWrite(() => LIVE.setTurn(next));
+          else if (t) turnWrite(() => LIVE.clearTurn());
+          return;
+        }
+        if (t.paused === true) return;                    // frozen, not expired
+        // They bought their last slot, or the bidding left them unable to
+        // afford the minimum — pass it on without waiting out the clock.
+        if (!seatCanNominate(cur)) { advanceTurn(); return; }
+        // A turn with no deadline and no pause shouldn't exist; re-arming it
+        // is the safe reading, the same one resumeLot() takes.
+        if (!isNum(t.deadline)) { turnWrite(() => LIVE.setTurn(cur)); return; }
+        if (LIVE.serverNow() >= t.deadline) advanceTurn();
+      }
+
+      /* ---- the nomination row ----
+         Same compare-before-assign discipline as renderClock(): this runs
+         five times a second for the length of every turn. */
+      function renderTurnBar() {
+        const c = turnClock();
+        const t = LIVE.turn;
+
+        // A lot on the block replaces this row with the bid row; there is
+        // never a moment where both are up.
+        if (!LIVE.enabled || lotOpen()) { turnBar.hidden = true; return; }
+
+        if (!t || !t.seat) {
+          // No rotation running. A viewer has nothing to say about that; the
+          // host needs to know the room is waiting on them.
+          if (READONLY || !LIVE.seatsReady) { turnBar.hidden = true; return; }
+          turnBar.hidden = false;
+          turnClockEl.hidden = true;
+          turnPauseBtn.hidden = true;
+          turnSkipBtn.hidden = true;
+          if (turnWhoEl.textContent !== "nobody can nominate") {
+            turnWhoEl.className = "bid-who nobody";
+            turnWhoEl.style.background = "";
+            turnWhoEl.textContent = "nobody can nominate";
+          }
+          const note = LIVE.seatsReady && !sortedSeatIds().some(id => LIVE.seats[id] && LIVE.seats[id].uid)
+            ? "No manager has taken a seat yet — pick players yourself until someone sits down."
+            : "Every seated manager is full, unseated or out of budget — pick players yourself.";
+          if (turnNoteEl.textContent !== note) { turnNoteEl.className = "bid-note"; turnNoteEl.textContent = note; }
+          return;
+        }
+
+        turnBar.hidden = false;
+        turnClockEl.hidden = false;
+        const mgr = turnManager();
+        const mine = isMyTurn();
+
+        let cls = "", num = "", cap = "", frac = 0;
+        if (!c || c.kind === "none") {
+          cls = "paused"; num = "–"; cap = "waiting";
+        } else if (c.kind === "paused") {
+          cls = "paused";
+          num = String(Math.ceil(c.left / 1000));
+          cap = "paused";
+          frac = c.left / LIVE_CFG.nominateMs;
+        } else if (c.kind === "expired") {
+          // The deadline decides; the host's write only records it — the same
+          // sentence the lot clock says at zero, for the same reason.
+          const stuck = READONLY ? !LIVE.hostPresent : (!LIVE.connected || LIVE.lostRoom);
+          cls = stuck ? "waiting" : "resolving";
+          num = "0";
+          cap = stuck ? (READONLY ? "waiting for host" : "offline — will pass") : "passing on…";
+        } else {
+          cls = c.kind === "urgent" ? "urgent" : "";
+          num = String(Math.ceil(c.left / 1000));
+          cap = "to nominate";
+          frac = c.left / LIVE_CFG.nominateMs;
+        }
+
+        const wantCls = "bid-clock" + (cls ? " " + cls : "");
+        if (turnClockEl.className !== wantCls) turnClockEl.className = wantCls;
+        if (turnClockNum.textContent !== num) turnClockNum.textContent = num;
+        if (turnClockCap.textContent !== cap) {
+          turnClockCap.textContent = cap;
+          turnClockNum.setAttribute("aria-label", cap);
+        }
+        turnClockFill.style.width = (Math.max(0, Math.min(1, frac)) * 100).toFixed(1) + "%";
+
+        const whoText = mine ? "Your turn" : (mgr ? mgr.name : "a manager");
+        if (turnWhoEl.textContent !== whoText) {
+          turnWhoEl.className = "bid-who";
+          turnWhoEl.textContent = whoText;
+        }
+        const whoBg = mine ? "var(--select)" : (mgr ? mgr.color : "");
+        if (turnWhoEl.style.background !== whoBg) turnWhoEl.style.background = whoBg;
+        turnWhoEl.classList.toggle("mine", mine);
+
+        let note;
+        if (c && c.kind === "paused") {
+          note = "Paused by the host — nominations reopen when they resume.";
+        } else if (mine) {
+          const w = mgr ? computeBid(mgr) : null;
+          note = w && w.state === "normal"
+            ? `Pick a player from the list to put them up — you open the bidding at ${fmtMoney(CONFIG.minBid)}` +
+              ` (your max bid is ${fmtMoney(w.maxBid)}).`
+            : "Your turn — but you cannot open a lot right now.";
+        } else if (mgr) {
+          note = `${mgr.name} is choosing the next player.`;
+        } else {
+          note = "Waiting for the next nomination.";
+        }
+        if (turnNoteEl.textContent !== note) {
+          turnNoteEl.className = "bid-note" + (mine ? " you" : "");
+          turnNoteEl.textContent = note;
+        }
+
+        turnSkipBtn.hidden = READONLY;
+        turnPauseBtn.hidden = READONLY;
+        if (!READONLY) {
+          const paused = !!c && c.kind === "paused";
+          const label = paused ? "Resume (P)" : "Pause (P)";
+          if (turnPauseBtn.textContent !== label) {
+            turnPauseBtn.textContent = label;
+            turnPauseBtn.title = paused
+              ? "Resume the nomination clock with the time it was frozen with"
+              : "Freeze the nomination clock for everyone — nominations are refused while paused";
+          }
+          turnPauseBtn.classList.toggle("on", paused);
+          const canPause = !!c && (paused || c.kind === "running" || c.kind === "urgent");
+          if (turnPauseBtn.disabled !== !canPause) turnPauseBtn.disabled = !canPause;
+          const skipDisabled = turnWritePending;
+          if (turnSkipBtn.disabled !== skipDisabled) turnSkipBtn.disabled = skipDisabled;
+        }
+      }
+
+      // Set by the viewer-only chrome below: on a phone the player list is
+      // collapsed by default, and a manager whose turn has just started needs
+      // the list they are about to nominate from.
+      let expandPlayerList = null;
+
+      // Every change to the published turn lands here, on both roles.
+      function onTurnChanged() {
+        renderTurnBar();
+        if (isMyTurn() && !lotOpen() && expandPlayerList) expandPlayerList();
+      }
+
+      /* ---- nominating, from this device ----
+         Deliberately hung off selectPlayer() — the existing row click, the
+         existing search box and ↑↓, the existing filters. There is no second
+         player picker, and a manager's list is the host's list. */
+
+      function doNominate(p) {
+        LIVE.nominate(p.id).then(res => {
+          if (!res.ok) { toast(`Could not nominate ${p.name} — ${res.reason}.`, "warn"); return; }
+          toast(`You nominated ${p.name} — the bidding opens at ${fmtMoney(CONFIG.minBid)} with your bid.`);
+        });
+      }
+
+      // Every refusal the rules make, made here first so a tap that cannot
+      // land costs a sentence rather than a round trip — and so the reason
+      // is a reason rather than "permission denied".
+      function nominateBlock(p) {
+        if (!LIVE.enabled) return "not connected";
+        const seat = LIVE.mySeat();
+        if (!seat) return "you are not seated";
+        // Ordered so the sentence is the most useful true one: during a lot
+        // the turn is still nominally the nominator's, and telling them it is
+        // their turn while a player is on the block would be no help at all.
+        if (lotOpen()) return "a player is already on the block";
+        if (!isMyTurn()) {
+          const m = turnManager();
+          return m ? `it is ${m.name}'s turn to nominate` : "it is not your turn";
+        }
+        if (p.status === "sold") return `${p.name} has already been sold`;
+        const c = turnClock();
+        if (c && c.kind === "paused") return "the host has paused the auction";
+        if (!c || (c.kind !== "running" && c.kind !== "urgent")) return "your nomination time has run out";
+        const m = MANAGERS[seat.manager];
+        const w = m ? computeBid(m) : null;
+        if (!w) return "this seat has no manager";
+        if (w.state === "full") return `${m.name}'s squad is full`;
+        if (w.state !== "normal") return `${m.name} cannot afford the minimum bid`;
+        return "";
+      }
+
+      // The manager's entry point: a row click, or Enter on the highlighted
+      // row. The confirm is there because this opens a lot AND puts money on
+      // it in one action — a mis-tap on a phone list would otherwise buy a
+      // player.
+      function tryNominate(p) {
+        if (!LIVE.enabled || !LIVE.mySeat()) return;   // unseated: a row click does nothing, as before
+        const why = nominateBlock(p);
+        if (why) { toast(`Cannot nominate ${p.name} — ${why}.`, "warn"); return; }
+        const m = MANAGERS[LIVE.mySeat().manager];
+        showConfirm({
+          title: `Nominate ${p.name}?`,
+          sub: `${p.position} · ${p.club} · ${fmtVal(p.value)}`,
+          lines: [
+            `This puts ${p.name} up straight away, with your bid already standing at ${fmtMoney(CONFIG.minBid)}.`,
+            `If nobody raises, ${m ? m.name : "you"} buys ${p.name} for ${fmtMoney(CONFIG.minBid)}.`
+          ],
+          focus: 0,
+          buttons: [
+            { label: "Nominate ⏎", kind: "primary", onClick: () => doNominate(p) },
+            { label: "Cancel" }
+          ]
+        });
       }
 
       // The tap. Never awaited by anything on screen: the buttons grey out for
@@ -4805,6 +5482,10 @@
           toast(`Outbid — ${by ? by.name : "another manager"} is now at ${fmtMoney(bid.price)}.`, "warn");
         }
 
+        // A lot opening or closing is also what puts the nomination row on
+        // screen or takes it off — the two are never up at the same time.
+        renderTurnBar();
+
         if (READONLY) {
           // The live lot node beats the debounced snapshot, so a viewer sees
           // the new player at the same moment as its opening price.
@@ -4813,10 +5494,13 @@
           return;
         }
 
+        // A lot this host did not open — somebody nominated. Follow it before
+        // anything below reads SELECTED.
+        adoptRemoteLot();
         seedPriceFromBid();
         renderBidRow();
         renderAssignBar();
-        if (!READONLY) maybeResolveLot();
+        maybeResolveLot();
       }
 
       /* ---- resolution (host only) ----
@@ -4902,6 +5586,12 @@
         // itself. Every path out of this function leaves the seq settled.
         resolvedSeqs.add(seq);
 
+        // Nothing here advances the rotation. Both branches below settle the
+        // lot through the existing assignment flow, and endSelection() — the
+        // one place a lot is ever closed — is where a nominated lot spends
+        // its nominator's turn. A sale the host makes by hand mid-lot has to
+        // spend that turn too, and it never comes through this function.
+
         const winSeat = bid.seat ? LIVE.seats[bid.seat] : null;
         const winner = winSeat && MANAGERS[winSeat.manager] ? MANAGERS[winSeat.manager] : null;
         const player = SELECTED;
@@ -4910,7 +5600,10 @@
         if (!winner) {
           // Expired with nobody on it: the existing unsold path, exactly what
           // U does. (A winning seat whose manager has since gone from CONFIG
-          // lands here too — there is nobody to sell to.)
+          // lands here too — there is nobody to sell to.) Unsold settles the
+          // lot exactly as a sale does, so it spends the nominator's turn
+          // exactly as a sale does — a player nobody wanted must not leave
+          // the rotation stuck on whoever put them up.
           markUnsold();
           toast(`Time — ${player.name} went unsold, no bids.`);
           return;
@@ -4930,6 +5623,9 @@
         // max bid (see database.rules.json), so a hand-written request can bid
         // past it. Leave the player selected so the host can settle it by hand,
         // and say so loudly rather than silently dropping a sale.
+        // The lot is not settled and endSelection() was never reached, so the
+        // rotation has deliberately not moved: the nominator still holds the
+        // turn, and the host has a player on their hands to place by hand.
         toast(`Time — ${player.name} could NOT be sold to ${winner.name} at ${fmtMoney(price)}: ` +
           `${assignErr.textContent || "the assignment was refused."} Settle it by hand.`, "warn");
       }
@@ -4947,7 +5643,12 @@
           renderBidRow();
           if (!READONLY) renderAssignBar();
         }
-        if (!READONLY) maybeResolveLot();
+        // The nomination clock rides the same tick, for the same reasons: it
+        // is a published deadline read against this device's own offset, and
+        // on the host it is also the only thing that notices that deadline
+        // has passed.
+        renderTurnBar();
+        if (!READONLY) { maybeResolveLot(); maintainTurn(); }
       }
 
       // Host: keep the price box in step with the live bidding so closing the
@@ -5273,7 +5974,7 @@
 
       const auctionView = document.createElement("div");
       auctionView.className = "auctionview";
-      auctionView.append(toolbar, walletBar, lotPanel, bidBar, assignBar, main);
+      auctionView.append(toolbar, walletBar, lotPanel, turnBar, bidBar, assignBar, main);
 
       const apptabs = document.createElement("div");
       apptabs.className = "apptabs";
@@ -6199,12 +6900,21 @@
       // club counts are all recomputed viewer-side from these fields.
       function buildLivePayload() {
         const players = [];
+        // Sold players, keyed by id, as a flat set of `true`s. This is the one
+        // thing in the payload that is not for a viewer to read: `players` is
+        // a LIST, and database.rules.json cannot search a list, so "is this
+        // player already sold" — which the nomination rule has to answer
+        // server-side — needs the same fact keyed by player id. It is derived
+        // from the same records in the same loop, so the two can't disagree,
+        // and at four squads of twenty it is at most eighty short keys.
+        const sold = {};
         for (const p of ALL) {
           if (p.status === "available") continue;
           const rec = { id: p.id, status: p.status };
           if (p.owner != null) rec.owner = p.owner;
           if (p.price != null) rec.price = p.price;
           players.push(rec);
+          if (p.status === "sold") sold[String(p.id)] = true;
         }
 
         const log = [];
@@ -6224,6 +6934,7 @@
           schema: SCHEMA_VERSION,
           lot: SELECTED ? { id: SELECTED.id } : null,
           players,
+          sold,
           log
         };
       }
@@ -6343,6 +7054,13 @@
           // can still bid on, so it does not get to fail quietly.
           if (LIVE.lotError) {
             setLiveStatus("bad", "⚠ Lot write failed — " + LIVE.lotError + " · last published " + seen, null);
+            return;
+          }
+          // The rotation is host-written state like any other, and a turn that
+          // failed to advance is a room waiting on a nominator who has already
+          // had their go. It does not get to fail quietly either.
+          if (LIVE.turnError) {
+            setLiveStatus("bad", "⚠ Turn write failed — " + LIVE.turnError + " · last published " + seen, null);
             return;
           }
           if (!LIVE.connected) {
@@ -6577,7 +7295,10 @@
         // Sitting down, being released, or another device taking the seat this
         // one wanted all arrive here — and all of them change whether this
         // browser may raise, so the bid row is repainted on the same event.
+        // They change who is in the rotation too, so the nomination row goes
+        // with it.
         renderBidRow();
+        renderTurnBar();
 
         if (!LIVE.enabled) { seatBar.hidden = true; return; }
 
@@ -6871,12 +7592,61 @@
 
       function setPhase(p) { phase = p; assignBar.dataset.phase = p; }
 
+      /* Picking a player. One entry point for both roles and for both ways a
+         lot can open — it is reached from the same row click, the same search
+         box and the same ↑↓ Enter it always was, and there is no second
+         player picker anywhere in this file.
+
+         A manager's pick is a NOMINATION: it opens the lot with their own
+         bid standing at the minimum, and it is refused unless the published
+         turn is theirs.
+
+         The host's pick is an OVERRIDE: the lot opens on any player, with no
+         standing bid, consuming nobody's turn — the correction path for when
+         something has gone wrong. The one ambiguous case is the host's own
+         turn, when a pick could honestly be either; that one asks. */
       function selectPlayer(p) {
-        if (READONLY) return;      // the lot is whatever the host says it is
         if (!p) return;
+        if (READONLY) { tryNominate(p); return; }
         // A sold player isn't re-bid — picking one opens the edit/reassign
         // dialog instead, from wherever it was clicked.
         if (p.status === "sold") { openEdit(p); return; }
+        if (LIVE.enabled && isMyTurn() && !lotOpen() && !nominateBlock(p)) { askHostOpen(p); return; }
+        hostOpenLot(p);
+      }
+
+      // The host, holding the seat whose turn it is. Nominating and
+      // overriding are different acts with different consequences — one
+      // spends their turn and puts their money on the player, the other
+      // spends nothing — so this is the one place the app asks which was
+      // meant rather than guessing. Enter still takes the default, so the
+      // keyboard flow is Enter, Enter as it always was.
+      function askHostOpen(p) {
+        const seat = LIVE.mySeat();
+        const m = seat ? MANAGERS[seat.manager] : null;
+        showConfirm({
+          title: `${p.name} — it is your turn`,
+          sub: `${p.position} · ${p.club} · ${fmtVal(p.value)}`,
+          lines: [
+            `Nominate: opens the lot with your bid standing at ${fmtMoney(CONFIG.minBid)} and uses your turn.` +
+            (m ? ` If nobody raises, ${m.name} buys ${p.name} for ${fmtMoney(CONFIG.minBid)}.` : ""),
+            "Open as host: opens the lot with no bid on it and leaves the turn where it is."
+          ],
+          focus: 0,
+          buttons: [
+            { label: "Nominate ⏎", kind: "primary", onClick: () => doNominate(p) },
+            { label: "Open as host", onClick: () => hostOpenLot(p) },
+            { label: "Cancel" }
+          ]
+        });
+      }
+
+      // The local half of picking a player: what this screen shows and what
+      // the keyboard is doing next. Shared by the host opening a lot and by
+      // the host FOLLOWING a lot a manager opened (adoptRemoteLot), so a
+      // nominated lot puts the host in exactly the state a hand-picked one
+      // does — which is what lets resolution stay one code path.
+      function beginSelection(p) {
         SELECTED = p;
         pendingManager = null;
         pendingPrice = null;
@@ -6884,15 +7654,47 @@
         priceInput.value = "";
         autoPrice = null;
         assignErr.textContent = "";
-        // Opening the lot for real: player, opening price (CONFIG.minBid, via
-        // openLot — there is no second source for it), no winner yet. Fire and
-        // forget, exactly like the snapshot publish beside it; the click that
-        // picked the player has already repainted.
+      }
+
+      // Host override. Opening price is CONFIG.minBid with no winner, via
+      // openLot — there is no second source for it. Fire and forget, exactly
+      // like the snapshot publish beside it; the click that picked the player
+      // has already repainted.
+      function hostOpenLot(p) {
+        beginSelection(p);
         LIVE.openLot(p.id);
         renderAssignBar();
         renderWallets();
         LIVE.schedulePublish();      // a new lot is on the block
         priceInput.focus();
+      }
+
+      // A manager nominated; this host did not open this lot. Follow it, so
+      // the panel shows the player the room is bidding on and — the part
+      // that matters — so resolution has a SELECTED to sell. Everything
+      // downstream (the clock, the bid row, resolveLot, undo) then behaves
+      // exactly as it does for a lot the host opened by hand.
+      function adoptRemoteLot() {
+        const lot = LIVE.lot;
+        if (READONLY || !lot || !lot.nom) return false;
+        const p = BY_ID.get(String(lot.player));
+        if (!p) return false;
+        // A nomination on a player who has already gone. The rules refuse
+        // these from `state/sold`, but that index is only as fresh as the
+        // last publish, so a nomination made inside the debounce window can
+        // still land. Close it here rather than let resolution sell the same
+        // player twice — the nominator keeps their turn and can pick again.
+        if (p.status === "sold") {
+          LIVE.closeLot();
+          toast(`${p.name} is already sold — that nomination was closed.`, "warn");
+          return false;
+        }
+        if (p === SELECTED) return false;
+        beginSelection(p);
+        renderAssignBar();
+        renderWallets();
+        LIVE.schedulePublish();      // the published lot id follows the node
+        return true;
       }
 
       function commitPrice() {
@@ -6941,13 +7743,13 @@
           return;
         }
         applyChange(SELECTED, { status: "sold", owner: m.id, price: pendingPrice }, "sale");
-        endSelection(true);
+        endSelection(true, true);
       }
 
       function markUnsold() {
         if (!SELECTED) return;
         applyChange(SELECTED, { status: "unsold", owner: null, price: null }, "unsold");
-        endSelection(true);
+        endSelection(true, true);
       }
 
       // Back into the available pool — from a sale (price refunded, because
@@ -6960,7 +7762,7 @@
       function releaseSelected() {
         if (!SELECTED || SELECTED.status !== "unsold") return;
         const entry = releasePlayer(SELECTED);
-        endSelection(true);
+        endSelection(true, true);
         if (entry) toast(`#${entry.seq} release — ${describeEntry(entry)}.`);
       }
 
@@ -6979,8 +7781,17 @@
         endSelection(false);
       }
 
-      function endSelection(clearSearch) {
+      // `settled` distinguishes the two ways a lot can end, and it is the
+      // only thing the rotation cares about: a sale, an unsold or a release
+      // SETTLED this lot, while a cancel pulled it back. Both close the lot;
+      // only the first spends a turn.
+      function endSelection(clearSearch, settled) {
         if (READONLY) return;
+        // Whether this ending moves the rotation is decided before the lot
+        // node goes: `nom` is the seat that nominated, and it is absent on
+        // every lot the host opened by hand — a host override consumes
+        // nobody's turn, which is exactly what makes it the correction path.
+        const nom = (LIVE.lot && LIVE.lot.nom) || null;
         // Closing the lot. Every way out of a lot lands here — confirmed sale,
         // unsold, release, cancel — so there is exactly one place that closes
         // one, and the sale itself has already gone through applyChange() on
@@ -7003,6 +7814,15 @@
         render({ preserveScroll: true });
         LIVE.schedulePublish();      // lot cleared (or replaced by the result)
         search.focus();
+
+        // The rotation, last, so a failed turn write can never be between the
+        // sale and the repaint that shows it. A settled nomination passes the
+        // turn on; a CANCELLED one hands it back to the same manager with a
+        // full clock, because a nomination the host pulled should cost them
+        // nothing. Neither happens for a lot the host opened himself.
+        if (!nom) return;
+        if (settled) advanceTurn(nom);
+        else if (turnSeatId() === nom) turnWrite(() => LIVE.setTurn(nom));
       }
 
       function onCardClick(i) {
@@ -7153,6 +7973,15 @@
         });
         syncToggle();
         toolbar.appendChild(listToggle);
+        // The list is what a manager nominates from, so a turn starting opens
+        // it. Only ever opens: a manager who has deliberately collapsed it
+        // again mid-turn is not fought over it, because this runs on the turn
+        // CHANGING, not on every tick.
+        expandPlayerList = () => {
+          if (!auctionView.classList.contains("listcollapsed")) return;
+          auctionView.classList.remove("listcollapsed");
+          syncToggle();
+        };
 
         // Hidden rather than disabled: an assignment bar a viewer can't use is
         // just a row of dead controls taking up the space the lot panel wants.
@@ -7167,6 +7996,7 @@
       LIVE.onStatus = renderLiveStatus;
       LIVE.onSeats = renderSeats;
       LIVE.onLot = onLotChanged;
+      LIVE.onTurn = onTurnChanged;
       if (READONLY) LIVE.onRemoteState = applyRemoteState;
       else LIVE.setPayloadBuilder(buildLivePayload);
 
