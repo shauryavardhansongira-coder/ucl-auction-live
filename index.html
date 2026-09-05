@@ -2292,13 +2292,27 @@
       return out;
     }
 
-    // No 0/o/1/l/i — these get dictated across a room.
-    function newRoomKey() { return randomChars(6, "23456789abcdefghjkmnpqrstuvwxyz"); }
+    // No 0/o/1/l/i — these get dictated across a room. Twelve characters
+    // because the key is shared as a URL rather than typed: with no
+    // authentication anywhere in this app, guessing a live room key is the
+    // one unauthenticated attack the database rules cannot close, and length
+    // is what closes it. ROOM_KEY_RE must stay in step with the regex in
+    // database.rules.json — the rules reject any room whose key doesn't match.
+    const ROOM_KEY_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz";
+    const ROOM_KEY_LEN = 12;
+    const ROOM_KEY_RE = /^[a-hjkmnp-z2-9]{12}$/;
+    function newRoomKey() { return randomChars(ROOM_KEY_LEN, ROOM_KEY_ALPHABET); }
+    function isRoomKey(s) { return ROOM_KEY_RE.test(String(s == null ? "" : s)); }
     function newSessionId() { return randomChars(16, "abcdefghijklmnopqrstuvwxyz0123456789"); }
 
+    // A key from before the length change (or any other shape the rules would
+    // now reject) is dropped rather than reused — the caller then generates a
+    // fresh one instead of failing the claim on a permission error.
     function readStoredRoomKey() {
-      try { return cleanRoomKey(localStorage.getItem(LIVE_CFG.roomKeyStorage)); }
-      catch (e) { return ""; }
+      try {
+        const k = cleanRoomKey(localStorage.getItem(LIVE_CFG.roomKeyStorage));
+        return isRoomKey(k) ? k : "";
+      } catch (e) { return ""; }
     }
 
     function storeRoomKey(k) {
@@ -2757,7 +2771,7 @@
       if (!LIVE.roomKey) {
         showError("No room to watch", [
           "This link has no room key, so there is nothing to show.",
-          "Ask the host for their viewer link — it looks like  " + viewerUrlFor("abc123"),
+          "Ask the host for their viewer link — it looks like  " + viewerUrlFor("k7m2xq4bnp83"),
           "This page never bids and never changes the auction; it only mirrors what the host's screen is doing."
         ]);
         return;

@@ -1,0 +1,68 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "rooms": {
+      ".read": false,
+      ".write": false,
+
+      "$room": {
+        ".read": "$room.matches(/^[a-hjkmnp-z2-9]{12}$/)",
+        ".write": "$room.matches(/^[a-hjkmnp-z2-9]{12}$/)",
+        ".validate": "$room.matches(/^[a-hjkmnp-z2-9]{12}$/)",
+
+        "host": {
+          ".validate": "newData.hasChildren(['sessionId', 'heartbeatAt']) && (!data.exists() || newData.child('heartbeatAt').val() > data.child('heartbeatAt').val())",
+          "sessionId": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64" },
+          "startedAt": { ".validate": "newData.isNumber()" },
+          "heartbeatAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+
+        "state": {
+          ".validate": "newData.hasChildren(['schema', 'updatedAt'])",
+
+          "schema": { ".validate": "newData.isNumber()" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+
+          "lot": {
+            ".validate": "newData.hasChild('id')",
+            "id": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64" },
+            "$other": { ".validate": false }
+          },
+
+          "players": {
+            "$index": {
+              ".validate": "newData.hasChildren(['id', 'status'])",
+              "id": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64" },
+              "status": { ".validate": "newData.isString() && (newData.val() === 'sold' || newData.val() === 'unsold')" },
+              "owner": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 63" },
+              "price": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000" },
+              "$other": { ".validate": false }
+            }
+          },
+
+          "log": {
+            "$index": {
+              ".validate": "newData.hasChildren(['seq', 'type', 'text'])",
+              "seq": { ".validate": "newData.isNumber()" },
+              "ts": { ".validate": "newData.isNumber()" },
+              "type": { ".validate": "newData.isString() && newData.val().length <= 32" },
+              "text": { ".validate": "newData.isString() && newData.val().length <= 300" },
+              "undone": { ".validate": "newData.isBoolean()" },
+              "owners": {
+                "$slot": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 63" }
+              },
+              "$other": { ".validate": false }
+            }
+          },
+
+          "$other": { ".validate": false }
+        },
+
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}
