@@ -1,4 +1,26 @@
 {
+  // ============================================================
+  // Identity model
+  // ------------------------------------------------------------
+  // Every client signs in with Firebase Anonymous Auth, so every
+  // write carries a uid. Reads stay open to anyone holding the
+  // twelve-character room key — viewers must keep working with no
+  // sign-in and no seat — but writes are now attributable:
+  //
+  //   host/uid   the browser that claimed the room. Only it may
+  //              write auction state, seats, or clear requests.
+  //   seats/mN   a named manager slot; carries the manager index,
+  //              the display name, and the uid holding it (if any).
+  //   requests   pending first-time claims, keyed by the asking uid.
+  //
+  // A '.write' granted at an ancestor cascades down and cannot be
+  // revoked by a child, so there is deliberately NO '.write' at
+  // $room: one there would hand every signed-in client the auction
+  // state. The room-key pattern is instead re-checked inside every
+  // child '.write' below, so it is still enforced in '.write' on
+  // every reachable path and not only in '.validate'.
+  // ============================================================
+
   "rules": {
     ".read": false,
     ".write": false,
@@ -9,18 +31,31 @@
 
       "$room": {
         ".read": "$room.matches(/^[a-hjkmnp-z2-9]{12}$/)",
-        ".write": "$room.matches(/^[a-hjkmnp-z2-9]{12}$/)",
         ".validate": "$room.matches(/^[a-hjkmnp-z2-9]{12}$/)",
 
+        // Claiming the room. Any signed-in client may take an unclaimed
+        // or stale room — that is what lets a host reload, and what lets
+        // a crashed host's room free itself — but only as itself: the uid
+        // written must be the caller's own. The monotonic heartbeat is
+        // what stops a straggler overwriting the live host. '.validate'
+        // is skipped on deletes, so onDisconnect().remove() still frees
+        // the room.
         "host": {
-          ".validate": "newData.hasChildren(['sessionId', 'heartbeatAt']) && (!data.exists() || newData.child('heartbeatAt').val() > data.child('heartbeatAt').val())",
+          ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/)",
+          ".validate": "newData.hasChildren(['sessionId', 'uid', 'heartbeatAt']) && newData.child('uid').val() === auth.uid && (!data.exists() || newData.child('heartbeatAt').val() > data.child('heartbeatAt').val())",
+
           "sessionId": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64" },
+          "uid": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128" },
           "startedAt": { ".validate": "newData.isNumber()" },
           "heartbeatAt": { ".validate": "newData.isNumber()" },
           "$other": { ".validate": false }
         },
 
+        // The auction itself. Only the uid recorded in the host claim may
+        // write it, so every published snapshot is attributable to the
+        // browser holding the room. Shape validation is unchanged.
         "state": {
+          ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && root.child('rooms').child($room).child('host').child('uid').val() === auth.uid",
           ".validate": "newData.hasChildren(['schema', 'updatedAt'])",
 
           "schema": { ".validate": "newData.isNumber()" },
@@ -59,6 +94,55 @@
           },
 
           "$other": { ".validate": false }
+        },
+
+        // Named manager slots. The host creates them, approves the first
+        // claim on each, and releases a device off one; all of that runs
+        // through this host-only '.write'. A seat's name and manager
+        // index are the host's to set and nobody else's.
+        "seats": {
+          ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && root.child('rooms').child($room).child('host').child('uid').val() === auth.uid",
+
+          "$seat": {
+            // The one write a non-host may make anywhere in a room, and it
+            // is not a self-approval. It is possible only on a seat the
+            // host has already created AND explicitly released (open ===
+            // true, no holder); it may write no uid but the caller's own;
+            // and it must carry the seat's existing manager index and name
+            // through untouched, so a claimant can never rename a seat or
+            // point it at a different manager. Release is what re-opens a
+            // seat, so a device switch costs the host one tap and the
+            // claimant one tap with no second approval — while a seat the
+            // host has never opened stays unclaimable without one.
+            ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && data.exists() && newData.exists() && data.child('open').val() === true && !data.child('uid').exists() && newData.child('uid').val() === auth.uid && newData.child('manager').val() === data.child('manager').val() && newData.child('name').val() === data.child('name').val() && !newData.child('open').exists()",
+
+            ".validate": "$seat.matches(/^m[0-9]{1,2}$/) && newData.hasChildren(['manager', 'name'])",
+
+            "manager": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 63" },
+            "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40" },
+            "uid": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128" },
+            "open": { ".validate": "newData.isBoolean() && newData.val() === true" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        // Pending first-time claims, keyed by the requesting uid so a
+        // device can only ever speak for itself and can only have one
+        // request outstanding. The host writes here too — approving or
+        // rejecting clears the request. A request may only name a seat
+        // that exists and is not already held; '.validate' is skipped on
+        // deletes, so cancelling and rejecting stay unconditional.
+        "requests": {
+          ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && root.child('rooms').child($room).child('host').child('uid').val() === auth.uid",
+
+          "$uid": {
+            ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && auth.uid === $uid",
+            ".validate": "newData.hasChildren(['seat', 'at']) && root.child('rooms').child($room).child('seats').child(newData.child('seat').val()).exists() && !root.child('rooms').child($room).child('seats').child(newData.child('seat').val()).child('uid').exists()",
+
+            "seat": { ".validate": "newData.isString() && newData.val().matches(/^m[0-9]{1,2}$/)" },
+            "at": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
         },
 
         "$other": { ".validate": false }

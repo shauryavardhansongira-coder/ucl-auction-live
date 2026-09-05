@@ -1903,6 +1903,115 @@
       background: var(--row2);
     }
 
+    /* ---------- seats ----------
+       The identity strip. On the host it is the control surface for
+       every seat in the room, and it sits directly under the room bar
+       at the top of the screen rather than behind a settings panel:
+       people swap laptop for phone mid-auction, and a release that
+       takes three clicks to find is a release that doesn't happen in
+       time. On a viewer it is one line saying who this device is, or
+       the way to ask to be someone. */
+    .seatbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 6px 10px;
+      background: var(--surface-1);
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+    }
+
+    .seatbar[hidden] {
+      display: none;
+    }
+
+    .seatbar-label {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    /* One chip per seat. The manager's colour is carried on the left
+       edge so a seat reads as the same identity it has in the wallet
+       strip and the lot panel, not as a separate list of names. */
+    .seat-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 3px 7px 3px 6px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--border-strong);
+      border-radius: 6px;
+    }
+
+    .seat-chip-name {
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .seat-chip-state {
+      color: var(--text-3);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .seat-chip-state.held {
+      color: var(--ok);
+      font-weight: 600;
+    }
+
+    .seat-chip-state.open {
+      color: var(--warn);
+      font-weight: 600;
+    }
+
+    .seat-chip .mf-btn {
+      padding: 2px 8px;
+      font-size: 11px;
+    }
+
+    /* A pending request is the one thing on this bar that is waiting on
+       the host, so it gets the warn wash and sits ahead of the seats. */
+    .seat-req {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 3px 7px;
+      background: var(--warn-wash);
+      border: 1px solid var(--warn);
+      border-radius: 6px;
+    }
+
+    .seat-req-text {
+      color: var(--text);
+    }
+
+    .seat-req-uid {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      color: var(--text-3);
+    }
+
+    .seat-you {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-weight: 700;
+      color: var(--bg);
+      background: var(--select);
+    }
+
+    .seat-note {
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
     /* ---------- viewer on a narrow screen ---------- */
 
     @media (max-width: 760px) {
@@ -1971,6 +2080,11 @@
 
       body.viewer .roombar-url {
         max-width: 100%;
+      }
+
+      body.viewer .seatbar {
+        padding: 5px 6px;
+        gap: 6px;
       }
 
       body.viewer .log-head .log-hint {
@@ -2271,8 +2385,22 @@
       staleHostMs: 20000,      // a host quiet for this long is assumed gone
       connectTimeoutMs: 9000,  // how long a starting host waits before giving up
       publishDebounceMs: 120,  // coalesces the render+publish burst of one action
-      roomKeyStorage: "uclAuction.roomKey.v1"
+      roomKeyStorage: "uclAuction.roomKey.v1",
+      authTimeoutMs: 9000,     // how long a starting host waits for a uid
+      seatPrefix: "m"          // seat ids are seatPrefix + manager index
     };
+
+    // Seat ids are derived from the manager index and nothing else, so the
+    // host can rebuild the seat list on every load without ever minting a
+    // second seat for the same manager. Must stay in step with the $seat
+    // pattern in database.rules.json.
+    function seatIdFor(managerId) { return LIVE_CFG.seatPrefix + managerId; }
+
+    // Opt-in local testing against `firebase emulators:start`, off unless the
+    // URL says so. Present because the rules below cannot be exercised against
+    // production without deploying them, and deploying them is not something
+    // this branch gets to do. Delete this and its two uses to drop the hook.
+    const USE_EMULATOR = new URLSearchParams(location.search).has("emu");
 
     // Firebase keys can't contain . $ # [ ] / — and this string gets read
     // aloud and typed on a phone, so keep it to lowercase alphanumerics.
@@ -2364,7 +2492,14 @@
         lastReceiveAt: null,   // viewer
         publishError: "",
         lostRoom: false,       // host: another session claimed the room
+        uid: "",               // this browser's anonymous uid, "" until signed in
+        authError: "",         // why there is no uid, when there isn't one
+        seats: {},             // seat id -> { manager, name, uid?, open? }
+        requests: {},          // requesting uid -> { seat, at }
+        seatsReady: false,     // has the seat list arrived at least once?
+        seatError: "",         // last seat write that failed, if any
         onStatus: null,        // set by the UI
+        onSeats: null,         // set by the UI
         onRemoteState: null    // set by the UI (viewer only)
       };
 
@@ -2386,24 +2521,76 @@
 
       function serverNow() { return Date.now() + serverOffset; }
 
+      function seatsChanged() {
+        // Same contract as status(): identity chrome must never be able to
+        // break the auction.
+        if (L.onSeats) { try { L.onSeats(L); } catch (e) { /* ignore */ } }
+      }
+
+      /* ---- identity ----
+         Anonymous auth gives this BROWSER a persistent uid — not this
+         person. The same manager on a laptop and a phone is two uids, and
+         clearing site data mints a third, which is the whole reason seats
+         exist as a separate, host-controlled layer on top. Nothing in this
+         file may assume a uid identifies a human being. */
+
+      // Resolves with the uid. The observer stays attached afterwards so a
+      // token refresh or a signed-out state is reflected rather than cached.
+      function startAuth() {
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          const fail = e => {
+            L.authError = errText(e);
+            status();
+            seatsChanged();
+            if (!settled) { settled = true; reject(e); }
+          };
+          fb.onAuthStateChanged(fb.auth, user => {
+            L.uid = user ? user.uid : "";
+            if (user) L.authError = "";
+            status();
+            seatsChanged();
+            if (user && !settled) { settled = true; resolve(user.uid); }
+          }, fail);
+          fb.signInAnonymously(fb.auth).catch(fail);
+        });
+      }
+
+      function withTimeout(promise, ms, message) {
+        return new Promise((resolve, reject) => {
+          const t = setTimeout(() => reject(new Error(message)), ms);
+          promise.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+        });
+      }
+
       async function loadSdk() {
         const v = LIVE_CFG.sdkVersion;
-        const [appMod, dbMod] = await Promise.all([
+        const [appMod, dbMod, authMod] = await Promise.all([
           import(`https://www.gstatic.com/firebasejs/${v}/firebase-app.js`),
-          import(`https://www.gstatic.com/firebasejs/${v}/firebase-database.js`)
+          import(`https://www.gstatic.com/firebasejs/${v}/firebase-database.js`),
+          import(`https://www.gstatic.com/firebasejs/${v}/firebase-auth.js`)
         ]);
         const app = appMod.initializeApp(CONFIG.firebase);
         const db = dbMod.getDatabase(app);
+        const auth = authMod.getAuth(app);
+        if (USE_EMULATOR) {
+          dbMod.connectDatabaseEmulator(db, "127.0.0.1", 9000);
+          authMod.connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+        }
         return {
           db,
+          auth,
           ref: dbMod.ref,
+          get: dbMod.get,
           set: dbMod.set,
           update: dbMod.update,
           remove: dbMod.remove,
           onValue: dbMod.onValue,
           runTransaction: dbMod.runTransaction,
           onDisconnect: dbMod.onDisconnect,
-          serverTimestamp: dbMod.serverTimestamp
+          serverTimestamp: dbMod.serverTimestamp,
+          signInAnonymously: authMod.signInAnonymously,
+          onAuthStateChanged: authMod.onAuthStateChanged
         };
       }
 
@@ -2478,6 +2665,7 @@
       // the link at the same instant: only one write can win, and the loser
       // sees the winner's record and aborts.
       async function claimHost() {
+        if (!L.uid) throw new Error("Not signed in — cannot claim a room without a uid.");
         hostRef = fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/host`);
         let conflict = null;
         const res = await fb.runTransaction(hostRef, cur => {
@@ -2493,6 +2681,11 @@
           // the real sentinel from then on.
           return {
             sessionId: L.sessionId,
+            // The rules require this to equal the caller's own uid, and only
+            // this uid may then write auction state or touch a seat. It is
+            // the browser, not the person: the same host reloading keeps the
+            // uid and walks straight back into the room.
+            uid: L.uid,
             startedAt: (cur && cur.sessionId === L.sessionId && cur.startedAt) || serverNow(),
             heartbeatAt: serverNow()
           };
@@ -2514,6 +2707,7 @@
         if (!fb || !hostRef) return;
         fb.update(hostRef, {
           sessionId: L.sessionId,
+          uid: L.uid,
           startedAt: hostStartedAt || fb.serverTimestamp(),
           heartbeatAt: fb.serverTimestamp()
         }).catch(() => { /* the next beat retries */ });
@@ -2547,7 +2741,14 @@
         try {
           fb = await loadSdk();
           watchConnection();
+          // Sign-in is started before the wait so the two overlap, but the
+          // host genuinely cannot continue without a uid: the claim writes it
+          // and the rules reject a claim that doesn't. A host blocking here is
+          // the intended behaviour — it is already blocked on the claim, and
+          // building a keyboard it must not use would be worse.
+          const authed = startAuth();
           await waitForConnection(LIVE_CFG.connectTimeoutMs);
+          await withTimeout(authed, LIVE_CFG.authTimeoutMs, "Timed out signing in to Firebase.");
           // Staleness of the existing host record is judged in server time, so
           // the offset has to be in hand before the claim transaction runs.
           const off = await firstValue(".info/serverTimeOffset", 2500);
@@ -2557,6 +2758,7 @@
           startHeartbeat();
           stateRef = fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/state`);
           L.enabled = true;
+          watchSeats();
           status();
           window.addEventListener("pagehide", releaseHost);
           return { ok: true };
@@ -2570,6 +2772,159 @@
       function releaseHost() {
         if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
         if (fb && hostRef) { try { fb.remove(hostRef); } catch (e) { /* onDisconnect covers it */ } }
+      }
+
+      /* ---- seats ----
+         Both roles subscribe: reads are open to anyone with the room key,
+         so a viewer can see the seat list (and whether the one it wants is
+         free) without being signed in yet. Writes are where the roles part,
+         and the rules — not this code — are what enforce that.
+
+         A seat is in exactly one of three states:
+           { manager, name }              never claimed — needs approval
+           { manager, name, uid }         held by that browser
+           { manager, name, open: true }  released — free to take, no approval
+
+         Release is what moves a seat back to `open`, and it is host-only.
+         That is the whole trick behind "switching devices doesn't need a
+         second approval": the host authorises the seat once by opening it,
+         and whoever asks next takes it directly. */
+
+      function seatRef(seatId) { return fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/seats/${seatId}`); }
+      function requestRef(uid) { return fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/requests/${uid}`); }
+
+      function watchSeats() {
+        fb.onValue(fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/seats`), snap => {
+          L.seats = snap.val() || {};
+          L.seatsReady = true;
+          seatsChanged();
+        }, () => { L.seats = {}; seatsChanged(); });
+
+        // Small enough to mirror whole on every client. A viewer only cares
+        // about its own row, but it can't filter server-side without a uid
+        // it may not have yet, and reads are open regardless.
+        fb.onValue(fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/requests`), snap => {
+          L.requests = snap.val() || {};
+          seatsChanged();
+        }, () => { L.requests = {}; seatsChanged(); });
+      }
+
+      // Host: bring the room's seats in line with the manager list, without
+      // ever disturbing who is sitting in one. Names come from CONFIG via
+      // MANAGERS and nowhere else, so editing a name there and reloading
+      // renames the seat while the holder keeps their place.
+      async function ensureSeats(defs) {
+        if (!fb || !L.enabled || L.role !== "host") return;
+        const seatsRef = fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/seats`);
+        let cur = {};
+        try {
+          const snap = await fb.get(seatsRef);
+          cur = snap.val() || {};
+        } catch (e) { return; }   // a failed read here must not stop the auction
+
+        const updates = {};
+        const wanted = new Set();
+        for (const d of defs) {
+          wanted.add(d.id);
+          const ex = cur[d.id];
+          if (ex && ex.manager === d.manager && ex.name === d.name) continue;
+          const next = { manager: d.manager, name: d.name };
+          if (ex && ex.uid) next.uid = ex.uid;
+          else if (ex && ex.open === true) next.open = true;
+          updates[d.id] = next;
+        }
+        // A manager removed from CONFIG leaves a seat nobody can be.
+        for (const id in cur) if (!wanted.has(id)) updates[id] = null;
+
+        if (!Object.keys(updates).length) return;
+        try { await fb.update(seatsRef, updates); L.seatError = ""; }
+        catch (e) { L.seatError = errText(e); }
+        seatsChanged();
+      }
+
+      // Claimant side. requestSeat is the only write a non-host makes on a
+      // seat it has not been given, and it writes to `requests`, not to the
+      // seat — the rules key that node by uid, so a device can only ever ask
+      // on its own behalf.
+      function requestSeat(seatId) {
+        if (!fb || !L.uid) return Promise.reject(new Error("Not signed in yet."));
+        return fb.set(requestRef(L.uid), { seat: seatId, at: fb.serverTimestamp() });
+      }
+
+      function cancelRequest() {
+        if (!fb || !L.uid) return Promise.resolve();
+        return fb.remove(requestRef(L.uid));
+      }
+
+      // Taking a seat the host has already released. Manager and name are
+      // copied straight back so the rules' "carry these through untouched"
+      // check passes; `open` is dropped, which is what closes the seat.
+      function claimOpenSeat(seatId) {
+        const seat = L.seats[seatId];
+        if (!fb || !L.uid) return Promise.reject(new Error("Not signed in yet."));
+        if (!seat) return Promise.reject(new Error("That seat no longer exists."));
+        if (seat.open !== true || seat.uid) return Promise.reject(new Error("That seat is not open."));
+        return fb.set(seatRef(seatId), { manager: seat.manager, name: seat.name, uid: L.uid });
+      }
+
+      /* ---- seats: host-only actions ---- */
+
+      // Approve in one multi-path write so the seat and the pending request
+      // can never disagree: either the device is seated and the request is
+      // gone, or neither happened.
+      function approveRequest(uid) {
+        const req = L.requests[uid];
+        if (!fb || !req) return Promise.reject(new Error("That request is gone."));
+        const seat = L.seats[req.seat];
+        if (!seat) return Promise.reject(new Error("That seat no longer exists."));
+        if (seat.uid) return Promise.reject(new Error(`The ${seat.name} seat is already taken.`));
+        return fb.update(fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}`), {
+          [`seats/${req.seat}`]: { manager: seat.manager, name: seat.name, uid },
+          [`requests/${uid}`]: null
+        });
+      }
+
+      function rejectRequest(uid) {
+        if (!fb) return Promise.resolve();
+        return fb.remove(requestRef(uid));
+      }
+
+      // Release: drop the device, keep the seat. Manager, name — and so every
+      // wallet, squad and price derived from that manager index — are
+      // untouched; only the holder changes. `open` is what lets the next
+      // device take it without coming back to the host.
+      function releaseSeat(seatId) {
+        const seat = L.seats[seatId];
+        if (!fb || !seat) return Promise.reject(new Error("That seat no longer exists."));
+        return fb.set(seatRef(seatId), { manager: seat.manager, name: seat.name, open: true });
+      }
+
+      // The host is a manager too, so it needs a way to sit down. Host writes
+      // to seats are unconditional under the rules, so this covers both an
+      // untouched seat and a released one.
+      function takeSeatAsHost(seatId) {
+        const seat = L.seats[seatId];
+        if (!fb || !L.uid) return Promise.reject(new Error("Not signed in yet."));
+        if (!seat) return Promise.reject(new Error("That seat no longer exists."));
+        return fb.set(seatRef(seatId), { manager: seat.manager, name: seat.name, uid: L.uid });
+      }
+
+      function mySeatId() {
+        if (!L.uid) return null;
+        for (const id in L.seats) {
+          const s = L.seats[id];
+          if (s && s.uid === L.uid) return id;
+        }
+        return null;
+      }
+
+      function mySeat() {
+        const id = mySeatId();
+        return id ? Object.assign({ id }, L.seats[id]) : null;
+      }
+
+      function myRequest() {
+        return (L.uid && L.requests && L.requests[L.uid]) || null;
       }
 
       /* ---- publishing (host) ---- */
@@ -2620,6 +2975,13 @@
           watchConnection();
           L.enabled = true;
           status();
+
+          // Fired and not awaited. Reads need no uid, so a viewer whose
+          // sign-in is slow — or blocked outright — still gets the whole
+          // auction; it just can't hold a seat until the uid lands. Nothing
+          // below this line depends on it.
+          startAuth().catch(() => { /* surfaced as L.authError in the seat bar */ });
+          watchSeats();
 
           fb.onValue(fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/state`), snap => {
             L.lastReceiveAt = Date.now();
@@ -2672,6 +3034,17 @@
       L.setPayloadBuilder = fn => { buildPayload = fn; };
       L.refreshDerived = refreshDerived;
       L.serverNow = serverNow;
+
+      L.ensureSeats = ensureSeats;
+      L.requestSeat = requestSeat;
+      L.cancelRequest = cancelRequest;
+      L.claimOpenSeat = claimOpenSeat;
+      L.approveRequest = approveRequest;
+      L.rejectRequest = rejectRequest;
+      L.releaseSeat = releaseSeat;
+      L.takeSeatAsHost = takeSeatAsHost;
+      L.mySeat = mySeat;
+      L.myRequest = myRequest;
       return L;
     }
 
@@ -2745,14 +3118,20 @@
         // host is out there. Running the auction matters more than mirroring
         // it — but that is the operator's call to make explicitly, not ours
         // to make silently.
+        // Two different failures land here now — the network, and sign-in.
+        // They need different fixes, and "could not reach Firebase" sent
+        // someone looking at their wifi when the real answer was a console
+        // toggle, so the title follows the error.
+        const authFailed = /auth|sign|token|api-key|admin-restricted/i.test(res.message || "");
         showConfirm({
-          title: "Could not reach Firebase",
+          title: authFailed ? "Could not sign in to Firebase" : "Could not reach Firebase",
           sub: "The auction can still run on this machine with localStorage autosave, but nothing will be mirrored to viewers — and there is no way to check whether another host is already live in this room.",
           lines: [
             res.message || "Connection failed.",
+            authFailed ? "Every client now signs in anonymously, so this host cannot claim the room without a uid. Check that Anonymous sign-in is enabled: Firebase console → Authentication → Sign-in method → Anonymous." : null,
             "Room key: " + LIVE.roomKey,
             "Only start offline if you are sure nobody else has this auction open as host."
-          ],
+          ].filter(Boolean),
           buttons: [
             { label: "Retry", kind: "primary", onClick: () => bootstrapHost(data) },
             { label: "Start offline — no mirroring", kind: "danger", onClick: () => { LIVE.reason = res.message || "Could not reach Firebase."; init(data); } }
@@ -3834,6 +4213,13 @@
       roomBar.className = "roombar";
       roomBar.hidden = true;
 
+      // Identity strip. Rebuilt wholesale on every seat change — it is a
+      // handful of nodes that change rarely, and a stale Release button is a
+      // worse failure than a repaint.
+      const seatBar = document.createElement("div");
+      seatBar.className = "seatbar";
+      seatBar.hidden = true;
+
       const liveBanner = document.createElement("div");
       liveBanner.className = "live-banner";
       liveBanner.setAttribute("role", "alert");
@@ -4877,6 +5263,232 @@
         setLiveStatus("ok", "● Live · room " + LIVE.roomKey + " · updated " + (age || "just now"), null);
       }
 
+      /* ---------- seats ----------
+         Purely additive: this bar is the only thing seats change about the
+         screen at this stage. Nothing here touches a wallet, a squad, the max
+         bid, the assignment bar or the keyboard flow — a seated viewer and an
+         unseated one see exactly the same auction, and the host runs it the
+         same way whether anyone has sat down or not. */
+
+      const SEAT_DEFS = MANAGERS.map(m => ({ id: seatIdFor(m.id), manager: m.id, name: m.name }));
+
+      function seatManager(seat) {
+        return (seat && MANAGERS[seat.manager]) || null;
+      }
+
+      // Every seat write is a network round trip that can be refused by the
+      // rules. Disable the button that started it, and put any refusal in
+      // front of the host rather than only in the console.
+      function seatAction(btn, run, okMsg) {
+        btn.disabled = true;
+        Promise.resolve()
+          .then(run)
+          .then(() => { if (okMsg) toast(okMsg); },
+            err => toast("Seat change failed — " + errText(err), "warn"))
+          .then(() => { btn.disabled = false; });
+      }
+
+      function seatButton(label, cls) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = cls || "mf-btn";
+        b.textContent = label;
+        return b;
+      }
+
+      function seatLabel(text) {
+        const el = document.createElement("span");
+        el.className = "seatbar-label";
+        el.textContent = text;
+        return el;
+      }
+
+      function seatNote(text) {
+        const el = document.createElement("span");
+        el.className = "seat-note";
+        el.textContent = text;
+        return el;
+      }
+
+      // A uid is 28 opaque characters. The seat name is the real identity, so
+      // this is only ever a tiebreaker when two devices want the same seat.
+      function shortUid(uid) { return String(uid || "").slice(0, 6); }
+
+      function sortedSeatIds() {
+        return Object.keys(LIVE.seats).sort((a, b) => {
+          const ma = LIVE.seats[a], mb = LIVE.seats[b];
+          return ((ma && ma.manager) || 0) - ((mb && mb.manager) || 0);
+        });
+      }
+
+      function renderHostSeats(box) {
+        const reqUids = Object.keys(LIVE.requests || {});
+
+        // Pending approvals go first: they are the only thing on this bar
+        // that someone else is waiting on.
+        for (const uid of reqUids) {
+          const req = LIVE.requests[uid];
+          const seat = req && LIVE.seats[req.seat];
+          if (!seat) continue;
+          const chip = document.createElement("span");
+          chip.className = "seat-req";
+          const txt = document.createElement("span");
+          txt.className = "seat-req-text";
+          txt.textContent = `A device is asking for ${seat.name}`;
+          const idEl = document.createElement("span");
+          idEl.className = "seat-req-uid";
+          idEl.textContent = shortUid(uid);
+          const yes = seatButton("Approve");
+          yes.addEventListener("click", () => seatAction(yes, () => LIVE.approveRequest(uid), `${seat.name} seated.`));
+          const no = seatButton("Reject");
+          no.addEventListener("click", () => seatAction(no, () => LIVE.rejectRequest(uid)));
+          chip.append(txt, idEl, yes, no);
+          box.appendChild(chip);
+        }
+
+        box.appendChild(seatLabel("Seats"));
+
+        for (const id of sortedSeatIds()) {
+          const seat = LIVE.seats[id];
+          if (!seat) continue;
+          const mgr = seatManager(seat);
+          const chip = document.createElement("span");
+          chip.className = "seat-chip";
+          if (mgr) chip.style.borderLeftColor = mgr.color;
+
+          const nameEl = document.createElement("span");
+          nameEl.className = "seat-chip-name";
+          nameEl.textContent = seat.name;
+
+          const stateEl = document.createElement("span");
+          stateEl.className = "seat-chip-state";
+          chip.append(nameEl, stateEl);
+
+          if (seat.uid) {
+            const isMe = seat.uid === LIVE.uid;
+            stateEl.className = "seat-chip-state held";
+            stateEl.textContent = isMe ? "● this device" : "● " + shortUid(seat.uid);
+            // The host is a manager too, so this releases their own seat by
+            // exactly the same path as anyone else's.
+            const rel = seatButton("Release");
+            rel.addEventListener("click", () => seatAction(rel, () => LIVE.releaseSeat(id),
+              `${seat.name} released — any device can now take it.`));
+            chip.appendChild(rel);
+          } else if (seat.open === true) {
+            stateEl.className = "seat-chip-state open";
+            stateEl.textContent = "open to claim";
+            const take = seatButton("Take");
+            take.addEventListener("click", () => seatAction(take, () => LIVE.takeSeatAsHost(id), `You are now ${seat.name}.`));
+            chip.appendChild(take);
+          } else {
+            stateEl.textContent = "not claimed";
+            const take = seatButton("Take");
+            take.addEventListener("click", () => seatAction(take, () => LIVE.takeSeatAsHost(id), `You are now ${seat.name}.`));
+            chip.appendChild(take);
+          }
+          box.appendChild(chip);
+        }
+
+        if (LIVE.seatError) box.appendChild(seatNote("⚠ " + LIVE.seatError));
+      }
+
+      function renderViewerSeats(box) {
+        const seat = LIVE.mySeat();
+        if (seat) {
+          const mgr = seatManager(seat);
+          const you = document.createElement("span");
+          you.className = "seat-you";
+          if (mgr) you.style.background = mgr.color;
+          you.textContent = "You are " + seat.name;
+          box.append(you, seatNote("Watching only — the host still runs every sale."));
+          return true;
+        }
+
+        const req = LIVE.myRequest();
+        if (req) {
+          const asked = LIVE.seats[req.seat];
+          box.appendChild(seatNote(`Asked for ${asked ? asked.name : "a seat"} — waiting for the host to approve.`));
+          const cancel = seatButton("Cancel");
+          cancel.addEventListener("click", () => seatAction(cancel, () => LIVE.cancelRequest()));
+          box.appendChild(cancel);
+          return true;
+        }
+
+        const ids = sortedSeatIds();
+        if (!ids.length) return false;   // host hasn't created seats yet
+
+        // Every seat already on a device is not a failure state — it is the
+        // normal mid-auction picture — so the label says what this device can
+        // actually do rather than inviting a tap that isn't there.
+        const anyFree = ids.some(id => LIVE.seats[id] && !LIVE.seats[id].uid);
+        box.appendChild(seatLabel(anyFree ? "Take a seat" : "Seats"));
+        for (const id of ids) {
+          const s = LIVE.seats[id];
+          if (!s) continue;
+          const mgr = seatManager(s);
+          const chip = document.createElement("span");
+          chip.className = "seat-chip";
+          if (mgr) chip.style.borderLeftColor = mgr.color;
+
+          if (s.uid) {
+            // Taken. Shown rather than hidden so the list of names on a phone
+            // matches the list of managers on the wall.
+            const nameEl = document.createElement("span");
+            nameEl.className = "seat-chip-name";
+            nameEl.textContent = s.name;
+            const st = document.createElement("span");
+            st.className = "seat-chip-state";
+            st.textContent = "taken";
+            chip.append(nameEl, st);
+          } else if (s.open === true) {
+            // Already approved once and released by the host — no second
+            // approval, this device just takes it.
+            const b = seatButton(s.name);
+            b.addEventListener("click", () => seatAction(b, () => LIVE.claimOpenSeat(id), `You are now ${s.name}.`));
+            chip.appendChild(b);
+            const st = document.createElement("span");
+            st.className = "seat-chip-state open";
+            st.textContent = "open";
+            chip.appendChild(st);
+          } else {
+            const b = seatButton(s.name);
+            b.addEventListener("click", () => seatAction(b, () => LIVE.requestSeat(id), "Asked the host for " + s.name + "."));
+            chip.appendChild(b);
+            const st = document.createElement("span");
+            st.className = "seat-chip-state";
+            st.textContent = "ask host";
+            chip.appendChild(st);
+          }
+          box.appendChild(chip);
+        }
+        return true;   // seats exist, so there is always something worth showing
+      }
+
+      function renderSeats() {
+        const box = document.createElement("div");
+
+        if (!LIVE.enabled) { seatBar.hidden = true; return; }
+
+        if (READONLY) {
+          if (!LIVE.uid) {
+            // Never blocks the auction view — the app is already fully
+            // rendered behind this line; only the seat offer is waiting.
+            if (LIVE.authError) box.appendChild(seatNote("Seats unavailable — could not sign in (" + LIVE.authError + ")."));
+            else if (LIVE.seatsReady) box.appendChild(seatNote("Signing in…"));
+            else { seatBar.hidden = true; return; }
+          } else if (!renderViewerSeats(box)) {
+            seatBar.hidden = true;
+            return;
+          }
+        } else {
+          if (!LIVE.seatsReady) { seatBar.hidden = true; return; }
+          renderHostSeats(box);
+        }
+
+        seatBar.replaceChildren(...box.childNodes);
+        seatBar.hidden = false;
+      }
+
       function setView(v) {
         if (v === appView) return;
         if (v !== "auction" && SELECTED) cancelSelection();
@@ -4893,7 +5505,7 @@
       }
       tabBtns[0].classList.add("on");
 
-      app.replaceChildren(roomBar, liveBanner, saveBanner, invariantBanner, apptabs, auctionView, teamsView, logView, editOverlay, toastEl);
+      app.replaceChildren(roomBar, seatBar, liveBanner, saveBanner, invariantBanner, apptabs, auctionView, teamsView, logView, editOverlay, toastEl);
 
       // Sticky group headers sit just below the real header row. Two things
       // were wrong before: (1) the measurement used the <tr>, but the sticky
@@ -5401,8 +6013,16 @@
       /* ---------- live wiring ---------- */
 
       LIVE.onStatus = renderLiveStatus;
+      LIVE.onSeats = renderSeats;
       if (READONLY) LIVE.onRemoteState = applyRemoteState;
       else LIVE.setPayloadBuilder(buildLivePayload);
+
+      // Seat names come from CONFIG.managers via MANAGERS and from nowhere
+      // else — there is no second place a name can be edited. Idempotent, so
+      // a host reloading mid-auction re-asserts the list without disturbing
+      // anyone already seated.
+      if (!READONLY) LIVE.ensureSeats(SEAT_DEFS);
+      renderSeats();
 
       // The status is time-relative ("published 4s ago") and a host going
       // quiet produces no event at all, so it has to be re-rendered on a
