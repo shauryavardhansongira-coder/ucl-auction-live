@@ -2120,6 +2120,131 @@
       font-weight: 600;
     }
 
+    /* ---------- the lot clock ----------
+       Every screen in the room counts down to the SAME instant. The lot
+       carries a deadline written in SERVER time; each client subtracts its
+       own .info/serverTimeOffset estimate from it rather than running a
+       countdown off its own clock, so a phone whose system time is an hour
+       out still shows the number everyone else is looking at.
+
+       It sits first in the bid row, ahead of the price, because for the
+       last few seconds of a lot it is the number the room is watching. */
+    .bid-clock {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 84px;
+    }
+
+    .bid-clock[hidden] {
+      display: none;
+    }
+
+    .bid-clock-num {
+      font-size: 34px;
+      font-weight: 800;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+
+    .bid-clock-cap {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+    }
+
+    /* Time left as a shape as well as a figure — readable from across a
+       room at a glance, and the thing that still moves in the second
+       between two identical whole-second readings. */
+    .bid-clock-bar {
+      height: 4px;
+      border-radius: 999px;
+      background: var(--surface-3);
+      overflow: hidden;
+    }
+
+    .bid-clock-bar i {
+      display: block;
+      height: 100%;
+      background: var(--text-2);
+      border-radius: 999px;
+    }
+
+    /* The last few seconds. Colour AND a pulse: colour alone is the one
+       signal a phone propped up across a room may not carry. */
+    .bid-clock.urgent .bid-clock-num,
+    .bid-clock.urgent .bid-clock-cap {
+      color: var(--err);
+    }
+
+    .bid-clock.urgent .bid-clock-bar i {
+      background: var(--err);
+    }
+
+    .bid-clock.urgent {
+      animation: clockpulse 1s steps(2, end) infinite;
+    }
+
+    @keyframes clockpulse {
+      50% { opacity: .5; }
+    }
+
+    /* Paused is published state, not a stopped local timer, so it reads the
+       same on every device — frozen figure, warn colour, explicit word. */
+    .bid-clock.paused .bid-clock-num,
+    .bid-clock.paused .bid-clock-cap {
+      color: var(--warn);
+    }
+
+    .bid-clock.paused .bid-clock-bar i {
+      background: var(--warn);
+    }
+
+    .bid-clock.resolving .bid-clock-num {
+      color: var(--ok);
+    }
+
+    .bid-clock.resolving .bid-clock-cap {
+      color: var(--ok);
+    }
+
+    .bid-clock.waiting .bid-clock-num {
+      color: var(--warn);
+    }
+
+    .bid-clock.waiting .bid-clock-cap {
+      color: var(--warn);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .bid-clock.urgent { animation: none; }
+    }
+
+    /* Host-only, and deliberately not sitting among the raise buttons: it
+       is not a bid, and a mis-tap on it during a fast lot is expensive. */
+    .bid-pause {
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .bid-pause.on {
+      border-color: var(--warn);
+      color: var(--warn);
+    }
+
+    .bid-pause[hidden] {
+      display: none;
+    }
+
     /* ---------- viewer on a narrow screen ---------- */
 
     @media (max-width: 760px) {
@@ -2215,6 +2340,40 @@
 
       body.viewer .bid-note {
         width: 100%;
+      }
+
+      /* On a phone the countdown and the price are the screen. The bid row
+         is pulled above the lot panel — four manager cards two-up push it
+         under the fold otherwise — and the clock takes the whole first
+         line at a size that reads from the other side of the room. */
+      body.viewer .toolbar,
+      body.viewer .walletbar {
+        order: -2;
+      }
+
+      body.viewer .bidbar {
+        order: -1;
+      }
+
+      body.viewer .bid-clock {
+        width: 100%;
+        flex-direction: row;
+        align-items: baseline;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      body.viewer .bid-clock-num {
+        font-size: 46px;
+      }
+
+      body.viewer .bid-clock-bar {
+        width: 100%;
+        height: 6px;
+      }
+
+      body.viewer .bid-price {
+        font-size: 34px;
       }
 
       body.viewer .log-head .log-hint {
@@ -2524,7 +2683,40 @@
       // database.rules.json, which accepts exactly these deltas and nothing
       // else — a step added here and not there is a button that always
       // fails. The buttons show the resulting total, not the step.
-      raiseSteps: [1, 5, 10]
+      raiseSteps: [1, 5, 10],
+
+      // ---- the lot clock ----
+      // A lot opens with lotDurationMs on the clock. A bid landing with
+      // extendMs or less to go pushes the deadline out to extendMs from
+      // that bid; a bid landing earlier than that does not shorten it.
+      // Both numbers are duplicated as one sum in the bid rule in
+      // database.rules.json (extendMs + clockToleranceMs); changing
+      // extendMs here means changing that sum there.
+      lotDurationMs: 15000,
+      extendMs: 10000,
+
+      // Slack the rules allow on top of extendMs. A bidder computes the
+      // extended deadline from ITS estimate of server time, and the write
+      // then takes a network hop to reach the server; without a little
+      // give, a device whose .info/serverTimeOffset is a few hundred
+      // milliseconds optimistic would have every late bid rejected. It
+      // bounds the abuse too: the furthest any bid can push a deadline is
+      // extendMs + this.
+      clockToleranceMs: 2000,
+
+      // How often the countdown repaints AND how often the host re-checks
+      // whether a deadline has passed. The check is a comparison against
+      // the deadline, never a setTimeout that was supposed to fire at it —
+      // a backgrounded tab throttles timers, and a sleeping laptop stops
+      // them dead, so lateness has to be survivable rather than prevented.
+      tickMs: 200,
+      urgentMs: 5000,          // "last few seconds" styling kicks in here
+
+      // After a reconnect the host waits this long before resolving
+      // anything. Its lot snapshot may still be the one from before the
+      // drop, and committing a sale at a price that has since moved is
+      // worse than resolving a second late.
+      resolveSettleMs: 1200
     };
 
     // Seat ids are derived from the manager index and nothing else, so the
@@ -2622,6 +2814,7 @@
         enabled: false,        // Firebase is up and this client may use it
         reason: "",            // why not, when not
         connected: false,      // .info/connected
+        connectedSince: 0,     // local ms at which this connection came up
         hostPresent: false,    // viewer: is a host heartbeating right now?
         lastHostBeat: 0,       // viewer: server time of that heartbeat
         hasRemote: false,      // viewer: has any snapshot arrived at all?
@@ -2747,6 +2940,10 @@
           const now = snap.val() === true;
           const reconnected = now && !L.connected;
           L.connected = now;
+          // When this connection came up, so the host can tell a snapshot it
+          // has held through a drop from one the server has just re-sent.
+          // Resolution waits for that (see maybeResolveLot).
+          L.connectedSince = now ? (L.connectedSince || Date.now()) : 0;
           // An onDisconnect is a one-shot the server fires and then forgets,
           // and firing it deleted our host record — so a reconnecting host
           // has to re-arm the handler and rewrite the record, not just carry
@@ -3101,9 +3298,25 @@
          winner hasn't, which is exactly the interleaving the transaction is
          here to prevent.
 
-         No timer lives here yet. When one does, it is a server-written
-         deadline beside `openedAt` and a `now < deadline` clause in the bid
-         rule — neither of which changes this shape. */
+         THE CLOCK lives inside `bid` rather than beside `openedAt`, and
+         that placement is forced rather than chosen. A late bid must extend
+         the deadline, and it must do so IN THE SAME WRITE that raises the
+         price — a bid that is rejected must not have moved the clock. A
+         Realtime Database transaction runs on exactly one node, so anything
+         a bid changes has to live under the node the transaction runs on.
+         `bid.deadline` is therefore part of the bid: the instant this bid
+         set the lot to end at, in server time.
+
+           bid.deadline   absent while paused, otherwise server ms
+           lot.paused     true while the host has the lot frozen
+           lot.remainingMs  ms that were left when it was frozen
+
+         Pause is published state, not a local timer stop, so it reads the
+         same on every device: the deadline is cleared (which is also what
+         makes the rules refuse bids), the remaining time is banked, and
+         resuming sets a fresh deadline that far out. Only the host writes
+         those three; a manager's bid may only push `deadline` later, and
+         only within the window the rules allow. */
 
       function lotRef() { return fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/lot`); }
       function bidRef() { return fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/lot/bid`); }
@@ -3128,7 +3341,14 @@
             // which is all seq has to be.
             seq: serverNow(),
             price: CONFIG.minBid,
-            at: fb.serverTimestamp()
+            at: fb.serverTimestamp(),
+            // The clock starts here. serverTimestamp() is a sentinel meaning
+            // "whatever the server's clock says", and there is no way to add
+            // fifteen seconds to it — so the deadline is server-corrected
+            // local time, the same compromise seq and claimHost() make. Every
+            // client then reads this one number and subtracts its OWN offset
+            // estimate, which is what makes the countdown agree everywhere.
+            deadline: serverNow() + LIVE_CFG.lotDurationMs
           }
         }).then(() => { L.lotError = ""; }, e => { L.lotError = errText(e); status(); });
       }
@@ -3139,6 +3359,44 @@
       function closeLot() {
         if (!fb || L.role !== "host") return Promise.resolve();
         return fb.remove(lotRef()).then(() => { L.lotError = ""; }, e => { L.lotError = errText(e); status(); });
+      }
+
+      /* ---- pause / resume (host) ----
+         One multi-path update, so the three facts that make up "paused" can
+         never disagree: the flag is set, the time that was left is banked,
+         and the deadline is gone. Clearing the deadline is not bookkeeping —
+         it is what makes the rules refuse every bid while paused, without
+         the bid rule needing to know what pausing is.
+
+         Resuming is the mirror image: a FRESH deadline that far out, so the
+         lot resumes with exactly the time it was frozen with rather than
+         with whatever has elapsed since. */
+      function pauseLot() {
+        if (!fb || !L.enabled || L.role !== "host") return Promise.resolve();
+        const lot = L.lot;
+        if (!lot || !lot.bid || lot.paused === true) return Promise.resolve();
+        if (!isNum(lot.bid.deadline)) return Promise.resolve();
+        const left = Math.max(0, Math.round(lot.bid.deadline - serverNow()));
+        return fb.update(lotRef(), {
+          paused: true,
+          remainingMs: left,
+          "bid/deadline": null
+        }).then(() => { L.lotError = ""; }, e => { L.lotError = errText(e); status(); });
+      }
+
+      function resumeLot() {
+        if (!fb || !L.enabled || L.role !== "host") return Promise.resolve();
+        const lot = L.lot;
+        if (!lot || !lot.bid || lot.paused !== true) return Promise.resolve();
+        // A paused lot with no banked figure shouldn't exist, but if one does,
+        // restarting it with a full lot's worth of time is the safe reading —
+        // resuming with zero would sell it on the next tick.
+        const left = isNum(lot.remainingMs) ? Math.max(0, lot.remainingMs) : LIVE_CFG.lotDurationMs;
+        return fb.update(lotRef(), {
+          paused: null,
+          remainingMs: null,
+          "bid/deadline": serverNow() + left
+        }).then(() => { L.lotError = ""; }, e => { L.lotError = errText(e); status(); });
       }
 
       /* Placing a bid. This is the one write in the app that genuinely races
@@ -3156,7 +3414,22 @@
          applyLocally:false is what keeps a rejected bid from corrupting this
          screen: without it the SDK would optimistically show the losing bid
          as accepted and then snap it back. Nothing local changes until the
-         server has agreed. */
+         server has agreed.
+
+         The clock extension is decided INSIDE this callback and returned as
+         part of the same value. That is the whole reason bid.deadline lives
+         on this node: a bid that loses the race returns nothing, commits
+         nothing, and so cannot have moved the deadline. There is no second
+         write to undo, and no ordering in which a rejected tap buys time. */
+      function extendedDeadline(cur) {
+        // A bid landing with extendMs or less to go pushes the end out to
+        // extendMs from now; one landing earlier leaves it exactly where it
+        // was. Written as a max rather than as an if/else so that a bid can
+        // never, under any clock skew, SHORTEN a lot.
+        const target = serverNow() + LIVE_CFG.extendMs;
+        return target > cur ? target : cur;
+      }
+
       function placeBid(seq, expected, next) {
         if (!fb || !L.enabled) return Promise.resolve({ ok: false, reason: "not connected" });
         const seat = mySeat();
@@ -3167,9 +3440,21 @@
           if (cur.seq !== seq) { reason = "a different lot is on the block now"; return; }
           if (cur.seat === seat.id) { reason = "you are already the top bid"; return; }
           if (cur.price !== expected) { reason = "the price moved to " + cur.price + " first"; return; }
+          // No deadline means the host has paused the lot — pausing is what
+          // clears it. The rules refuse the write for the same reason, so
+          // this is the friendly message rather than the enforcement.
+          if (!isNum(cur.deadline)) { reason = "the lot is paused"; return; }
+          if (serverNow() >= cur.deadline) { reason = "time was up"; return; }
           // serverTimestamp() sentinels aren't allowed inside a transaction —
           // same compromise claimHost() makes for heartbeatAt.
-          return { seq: cur.seq, price: next, seat: seat.id, uid: L.uid, at: serverNow() };
+          return {
+            seq: cur.seq,
+            price: next,
+            seat: seat.id,
+            uid: L.uid,
+            at: serverNow(),
+            deadline: extendedDeadline(cur.deadline)
+          };
         }, { applyLocally: false }).then(
           res => res.committed ? { ok: true } : { ok: false, reason: reason || "it did not land" },
           err => ({ ok: false, reason: errText(err) })
@@ -3299,6 +3584,8 @@
       L.openLot = openLot;
       L.closeLot = closeLot;
       L.placeBid = placeBid;
+      L.pauseLot = pauseLot;
+      L.resumeLot = resumeLot;
       return L;
     }
 
@@ -4188,6 +4475,36 @@
       bidNoteEl.setAttribute("role", "status");
       bidNoteEl.setAttribute("aria-live", "polite");
 
+      // The clock. First in the row and drawn on both roles from the same
+      // code, exactly like the price beside it — a viewer that saw a
+      // different number to the host's would be worse than a viewer with no
+      // clock at all.
+      const clockEl = document.createElement("div");
+      clockEl.className = "bid-clock";
+      const clockNum = document.createElement("div");
+      clockNum.className = "bid-clock-num";
+      clockNum.setAttribute("role", "status");
+      // Polite, not assertive: this element changes every second, and an
+      // assertive live region would have a screen reader talking over the
+      // room for the whole lot.
+      clockNum.setAttribute("aria-live", "off");
+      const clockCap = document.createElement("div");
+      clockCap.className = "bid-clock-cap";
+      const clockBar = document.createElement("div");
+      clockBar.className = "bid-clock-bar";
+      const clockFill = document.createElement("i");
+      clockBar.appendChild(clockFill);
+      clockEl.append(clockNum, clockCap, clockBar);
+
+      // Host only. Pausing writes published state, so this button is a
+      // request to the database, not a local timer stop.
+      const pauseBtn = document.createElement("button");
+      pauseBtn.type = "button";
+      pauseBtn.className = "bid-pause";
+      pauseBtn.textContent = "Pause (P)";
+      pauseBtn.hidden = true;
+      pauseBtn.addEventListener("click", () => togglePause());
+
       const bidButtons = LIVE_CFG.raiseSteps.map(step => {
         const b = document.createElement("button");
         b.type = "button";
@@ -4197,7 +4514,7 @@
         return b;
       });
       bidBtnWrap.append(...bidButtons);
-      bidBar.append(bidLabel, bidPriceEl, bidWhoEl, bidBtnWrap, bidNoteEl);
+      bidBar.append(clockEl, pauseBtn, bidLabel, bidPriceEl, bidWhoEl, bidBtnWrap, bidNoteEl);
 
       // One bid in flight at a time. A round trip is tens of milliseconds, and
       // two overlapping taps from the same device would be racing themselves:
@@ -4207,6 +4524,9 @@
       // Last bid this screen has seen, so a winner changing out from under us
       // can be reported as an outbid rather than only as a number that moved.
       let lastBidSeen = null;
+      // Host: every lot opening this session has already settled, by seq.
+      // The idempotency key for automatic resolution — see maybeResolveLot.
+      const resolvedSeqs = new Set();
 
       // The open lot, but only when it is the same player the panel above is
       // showing. During the ~120ms between the host opening a lot and the
@@ -4224,6 +4544,119 @@
         return s ? (MANAGERS[s.manager] || null) : null;
       }
 
+      /* ---- the clock, as this screen reads it ----
+         One function, used by both roles to draw the countdown and by the
+         host to decide a lot is over — so what a viewer watches reach zero
+         and what the host acts on are the same reading of the same number.
+
+         `left` is never counted down locally. It is the published deadline
+         minus THIS device's estimate of server time, recomputed from
+         scratch on every tick, which is what makes a phone with an hour-wrong
+         system clock show the same seconds as the host. */
+      function lotClock() {
+        const bid = liveBid();
+        if (!LIVE.enabled || !bid) return null;
+        const lot = LIVE.lot;
+        const seq = bid.seq;
+        // Paused is published state, so it is read here rather than inferred
+        // from a stopped timer: the frozen figure is the one the host banked,
+        // and every device shows it.
+        if (lot.paused === true) {
+          return { kind: "paused", left: isNum(lot.remainingMs) ? Math.max(0, lot.remainingMs) : 0, seq };
+        }
+        if (!isNum(bid.deadline)) return { kind: "none", left: 0, seq };
+        const left = bid.deadline - LIVE.serverNow();
+        if (left <= 0) return { kind: "expired", left: 0, seq };
+        return { kind: left <= LIVE_CFG.urgentMs ? "urgent" : "running", left, seq };
+      }
+
+      // "Genuinely live" — running, or frozen mid-run. Not a lot whose
+      // deadline has passed, not one this host has already settled, and not
+      // no lot at all. The price prefill hangs off exactly this: while a lot
+      // is live the box tracks the bidding, and every other time — above all
+      // when the host is correcting a sale after the fact — it starts blank.
+      function lotIsLive() {
+        const c = lotClock();
+        if (!c || c.kind === "none" || c.kind === "expired") return false;
+        return !resolvedSeqs.has(c.seq);
+      }
+
+      // Returns the clock's kind so the caller can tell a state change (which
+      // needs the whole row repainted) from a second ticking by (which needs
+      // three text nodes and a width).
+      function renderClock() {
+        const c = lotClock();
+        if (!c) {
+          clockEl.hidden = true;
+          pauseBtn.hidden = true;
+          return "";
+        }
+        clockEl.hidden = false;
+        pauseBtn.hidden = READONLY;
+
+        let cls = "", num = "", cap = "", frac = 0;
+        if (c.kind === "paused") {
+          cls = "paused";
+          num = String(Math.ceil(c.left / 1000));
+          cap = "paused";
+          frac = c.left / LIVE_CFG.lotDurationMs;
+        } else if (c.kind === "expired" || c.kind === "none") {
+          // The deadline decides the lot; the host's write only records it.
+          // In between, every screen says which of the two it is waiting on —
+          // and a viewer whose host has walked away is told that instead of
+          // being left staring at "resolving…" forever.
+          const stuck = READONLY ? !LIVE.hostPresent : (!LIVE.connected || LIVE.lostRoom);
+          cls = stuck ? "waiting" : "resolving";
+          num = "0";
+          cap = stuck ? (READONLY ? "waiting for host" : "offline — will settle") : "resolving…";
+        } else {
+          cls = c.kind === "urgent" ? "urgent" : "";
+          num = String(Math.ceil(c.left / 1000));
+          cap = "seconds left";
+          frac = c.left / LIVE_CFG.lotDurationMs;
+        }
+
+        // Everything here is compared before it is assigned. This function
+        // runs five times a second for the length of every lot, on phones,
+        // and an attribute rewritten to the value it already held still
+        // costs a mutation — only the bar's width is meant to change on
+        // most ticks.
+        const wantCls = "bid-clock" + (cls ? " " + cls : "");
+        if (clockEl.className !== wantCls) clockEl.className = wantCls;
+        if (clockNum.textContent !== num) clockNum.textContent = num;
+        if (clockCap.textContent !== cap) {
+          clockCap.textContent = cap;
+          clockNum.setAttribute("aria-label", cap === "seconds left" ? "seconds left" : cap);
+        }
+        // Denominator is a full lot rather than whatever this deadline was
+        // set from, so an extension reads as "ten of fifteen back on the
+        // clock" instead of silently redefining what a full bar means.
+        clockFill.style.width = (Math.max(0, Math.min(1, frac)) * 100).toFixed(1) + "%";
+
+        if (!READONLY) {
+          const paused = c.kind === "paused";
+          const label = paused ? "Resume (P)" : "Pause (P)";
+          const disabled = !(paused || c.kind === "running" || c.kind === "urgent");
+          if (pauseBtn.textContent !== label) {
+            pauseBtn.textContent = label;
+            pauseBtn.title = paused
+              ? "Resume the lot with the time it was frozen with"
+              : "Freeze the countdown for everyone — bids are refused while paused";
+          }
+          pauseBtn.classList.toggle("on", paused);
+          if (pauseBtn.disabled !== disabled) pauseBtn.disabled = disabled;
+        }
+        return c.kind;
+      }
+
+      function togglePause() {
+        if (READONLY) return;
+        const c = lotClock();
+        if (!c) return;
+        if (c.kind === "paused") LIVE.resumeLot();
+        else if (c.kind === "running" || c.kind === "urgent") LIVE.pauseLot();
+      }
+
       // The tap. Never awaited by anything on screen: the buttons grey out for
       // the round trip and the row repaints when the answer arrives, so a slow
       // network makes bidding feel slow but never makes the app unresponsive.
@@ -4237,6 +4670,12 @@
         const next = expected + step;
 
         if (bid.seat === seat.id) { toast("You are already the top bid.", "warn"); return; }
+
+        // Same two refusals the rules make, made here so a tap that cannot
+        // possibly land costs a toast rather than a round trip.
+        const c = lotClock();
+        if (c && c.kind === "paused") { toast("The host has paused this lot — bidding reopens when they resume.", "warn"); return; }
+        if (!c || c.kind !== "running" && c.kind !== "urgent") { toast("Time is up on this lot.", "warn"); return; }
 
         // The wallet limit again, at the moment of the tap rather than at the
         // moment of the last paint — the rules cannot compute a max bid, so
@@ -4263,6 +4702,7 @@
 
       function renderBidRow() {
         const bid = liveBid();
+        const clock = renderClock();
         if (!LIVE.enabled || !bid) { bidBar.hidden = true; return; }
         bidBar.hidden = false;
 
@@ -4299,6 +4739,11 @@
 
         let blockAll = "";
         if (!w) blockAll = "This seat has no manager.";
+        // The clock outranks everything below it: a paused or finished lot
+        // takes no bids from anyone, top bidder or not. Both are refused by
+        // the rules too — this is the sentence, not the enforcement.
+        else if (clock === "paused") blockAll = "Paused by the host — bidding reopens when they resume.";
+        else if (clock === "expired" || clock === "none") blockAll = "Time is up — this lot is being settled.";
         else if (bidInFlight) blockAll = "Sending…";
         else if (winning) blockAll = "You are the top bid.";
         else if (w.state === "full") blockAll = `${m.name}'s squad is full (${CONFIG.squadSize}/${CONFIG.squadSize}).`;
@@ -4319,9 +4764,16 @@
           b.title = why || `Raise the bid to ${total}`;
         });
 
-        if (winning) {
+        // A stopped clock is the one thing that outranks "you are winning" in
+        // this note: the top bidder needs to know the lot is frozen or over
+        // just as much as everyone else does.
+        const stopped = clock === "paused" || clock === "expired" || clock === "none";
+        if (winning && !stopped) {
           bidNoteEl.className = "bid-note you";
           bidNoteEl.textContent = `You are the top bid at ${fmtMoney(price)} — you cannot raise yourself.`;
+        } else if (winning) {
+          bidNoteEl.className = "bid-note you";
+          bidNoteEl.textContent = `You are the top bid at ${fmtMoney(price)} — ${blockAll}`;
         } else if (blockAll) {
           bidNoteEl.className = "bid-note warn";
           bidNoteEl.textContent = blockAll;
@@ -4364,16 +4816,156 @@
         seedPriceFromBid();
         renderBidRow();
         renderAssignBar();
+        if (!READONLY) maybeResolveLot();
+      }
+
+      /* ---- resolution (host only) ----
+         The DEADLINE decides a lot. This code only records that decision, and
+         the difference is the whole design: nothing here is scheduled to fire
+         AT the deadline, because a backgrounded tab throttles timers and a
+         sleeping laptop stops them altogether. Every tick simply asks whether
+         the published deadline has passed, so a host that was away for ninety
+         seconds settles the lot on its first tick back rather than leaving it
+         open forever.
+
+         Viewers never run any of this. They watch the clock reach zero and
+         wait for the host's write — which is also why a viewer whose host has
+         gone quiet is told so on the clock rather than left staring at
+         "resolving…".
+
+         One lot produces one sale, through four layers that stack:
+
+           1. only the host resolves, and the room has exactly one host —
+              the claim transaction and the heartbeat already guarantee that,
+              and a host that has lost the room (lostRoom) stops here too.
+           2. resolvedSeqs remembers every lot opening this session has
+              settled. seq is minted once per opening of one player, so a
+              retry, a reconnect, a late snapshot or a second tick cannot
+              settle the same opening twice — and re-running a player later
+              is a NEW opening with a new seq, which is meant to work.
+           3. the guard is written before the sale, and the sale itself is a
+              synchronous local mutation, so there is no await window for a
+              second tick to slip through.
+           4. the sale goes through applyChange() exactly as a hand-made one
+              does. There is no second assignment path to disagree with the
+              first, and undo unwinds an automatic sale by the same log entry
+              it unwinds a manual one by. */
+      let closingResolved = false;
+
+      function maybeResolveLot() {
+        if (READONLY || !LIVE.enabled || LIVE.lostRoom) return;
+        const lot = LIVE.lot;
+        if (!lot || !lot.bid) return;
+        const seq = lot.bid.seq;
+
+        // Already settled, but the node is still there: the close write failed
+        // or was made while offline. Retry it — a lot left open is one the
+        // rules would still take bids on.
+        if (resolvedSeqs.has(seq)) { retryClose(); return; }
+
+        if (lot.paused === true) return;                       // frozen, not finished
+        if (!isNum(lot.bid.deadline)) return;
+        if (LIVE.serverNow() < lot.bid.deadline) return;
+
+        // Decide only on data we know is current. Mid-drop, this snapshot is
+        // whatever we were holding when the connection went, and a bid may
+        // have landed on the server since; committing a sale at a price that
+        // has already moved is worse than settling a second late.
+        if (!LIVE.connected) return;
+        if (Date.now() - LIVE.connectedSince < LIVE_CFG.resolveSettleMs) return;
+
+        // liveBid() is the existing "the lot node and the panel agree" test.
+        // If they don't, this host has moved on — clear the stale node rather
+        // than sell a player who is not on the block.
+        if (!liveBid()) { retryClose(); return; }
+        resolveLot(seq);
+      }
+
+      function retryClose() {
+        if (closingResolved || !LIVE.connected || !LIVE.lot) return;
+        closingResolved = true;
+        Promise.resolve(LIVE.closeLot()).then(
+          () => { closingResolved = false; },
+          () => { closingResolved = false; }
+        );
+      }
+
+      // Drives the host's own assignment flow, key for key: price, manager,
+      // confirm. It sets the same three pieces of state the host's fingers
+      // would set and then calls the same function Enter calls, so an
+      // automatic sale is indistinguishable from a hand-made one — same log
+      // entry, same wallet arithmetic, same undo.
+      function resolveLot(seq) {
+        const bid = liveBid();
+        if (!bid || !SELECTED) return;
+        // Written before anything that could throw, and before the mutation
+        // itself. Every path out of this function leaves the seq settled.
+        resolvedSeqs.add(seq);
+
+        const winSeat = bid.seat ? LIVE.seats[bid.seat] : null;
+        const winner = winSeat && MANAGERS[winSeat.manager] ? MANAGERS[winSeat.manager] : null;
+        const player = SELECTED;
+        const price = bid.price;
+
+        if (!winner) {
+          // Expired with nobody on it: the existing unsold path, exactly what
+          // U does. (A winning seat whose manager has since gone from CONFIG
+          // lands here too — there is nobody to sell to.)
+          markUnsold();
+          toast(`Time — ${player.name} went unsold, no bids.`);
+          return;
+        }
+
+        pendingPrice = price;
+        pendingManager = winner.id;
+        setPhase("manager");
+        confirmAssignment();
+
+        if (player.status === "sold") {
+          toast(`Time — ${player.name} sold to ${winner.name} for ${fmtMoney(price)}. Undo with ⌘/Ctrl+Z.`);
+          return;
+        }
+        // confirmAssignment refused it. The only way that happens is a bid the
+        // client's affordability check never saw — the rules cannot compute a
+        // max bid (see database.rules.json), so a hand-written request can bid
+        // past it. Leave the player selected so the host can settle it by hand,
+        // and say so loudly rather than silently dropping a sale.
+        toast(`Time — ${player.name} could NOT be sold to ${winner.name} at ${fmtMoney(price)}: ` +
+          `${assignErr.textContent || "the assignment was refused."} Settle it by hand.`, "warn");
+      }
+
+      // One tick drives the countdown on every screen and, on the host, the
+      // resolve check. Deliberately an interval that re-reads the deadline
+      // rather than a timer set to fire at it.
+      let lastClockKind = "";
+      function tickClock() {
+        const kind = renderClock();
+        if (kind !== lastClockKind) {
+          // A state change (running → urgent → expired, or in and out of
+          // paused) changes which buttons are live and what the note says.
+          lastClockKind = kind;
+          renderBidRow();
+          if (!READONLY) renderAssignBar();
+        }
+        if (!READONLY) maybeResolveLot();
       }
 
       // Host: keep the price box in step with the live bidding so closing the
-      // lot is Enter, Enter through the flow that already exists — no second
-      // path that assigns a player. It never fights the operator: the box is
-      // only refilled while it still holds exactly what this function last put
-      // there (or nothing at all), so a typed number always wins.
+      // lot early is Enter, Enter through the flow that already exists — no
+      // second path that assigns a player. It never fights the operator: the
+      // box is only refilled while it still holds exactly what this function
+      // last put there (or nothing at all), so a typed number always wins.
+      //
+      // Gated on lotIsLive(). A lot now closes itself, so the assignment bar's
+      // other job is correction — fixing a wrong sale, re-running a lot,
+      // seating a player by hand after someone dropped — and a price box that
+      // prefilled itself from a finished lot's last bid would be putting a
+      // number in front of the host that they did not choose and no longer
+      // means anything. Correcting after the fact starts blank.
       let autoPrice = null;
       function seedPriceFromBid() {
         if (READONLY || !SELECTED || phase !== "price") return;
+        if (!lotIsLive()) return;
         const bid = liveBid();
         if (!bid || !bid.seat) return;         // nobody has bid — leave the box empty
         const cur = priceInput.value.trim();
@@ -6315,7 +6907,7 @@
         // committed is the price that seat actually won at. 1–4 still
         // overrides it and Backspace still steps back; no key does anything
         // different than it did before.
-        const wonBid = liveBid();
+        const wonBid = lotIsLive() ? liveBid() : null;
         if (wonBid && wonBid.seat && wonBid.price === price) {
           const ws = LIVE.seats[wonBid.seat];
           if (ws && MANAGERS[ws.manager]) pendingManager = ws.manager;
@@ -6477,6 +7069,11 @@
         if (e.key === "t" || e.key === "T") {
           e.preventDefault();
           setView(appView === "teams" ? "auction" : "teams");
+        } else if (e.key === "p" || e.key === "P") {
+          // Pause/resume the open lot. Guarded by isTypingTarget above, like
+          // T and L, so it can never fire out of the search or price box.
+          e.preventDefault();
+          togglePause();
         } else if (e.key === "l" || e.key === "L") {
           e.preventDefault();
           setView(appView === "log" ? "auction" : "log");
@@ -6585,6 +7182,17 @@
       // clock rather than only on change.
       renderLiveStatus();
       setInterval(renderLiveStatus, 1000);
+
+      // The lot clock runs faster than the status line and never stops: it is
+      // both the countdown every screen draws and, on the host, the only thing
+      // that notices a deadline has passed.
+      tickClock();
+      setInterval(tickClock, LIVE_CFG.tickMs);
+      // A tab returning from the background has had its interval throttled to
+      // something like once a second — or, on a laptop that slept, not run at
+      // all — and may be looking at a deadline that is long past. Don't make
+      // the room wait for the next tick.
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) tickClock(); });
 
       checkInvariants();     // baseline: the freshly loaded records must be consistent
       renderSaveStatus();

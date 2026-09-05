@@ -162,9 +162,36 @@
         // ============================================================
         // The open lot. One node carries the whole of live bidding:
         //
-        //   lot/player    who is on the block                host only
-        //   lot/openedAt  when it was opened                 host only
-        //   lot/bid       { seq, price, seat, uid, at }      the room
+        //   lot/player       who is on the block             host only
+        //   lot/openedAt     when it was opened              host only
+        //   lot/paused       true while frozen               host only
+        //   lot/remainingMs  ms banked when it froze         host only
+        //   lot/bid          { seq, price, seat, uid, at,
+        //                      deadline }                    the room
+        //
+        // THE CLOCK. `bid/deadline` is when this lot ends, in server time.
+        // It sits inside `bid` and not beside `openedAt` because a late bid
+        // must extend it IN THE SAME WRITE that raises the price — a bid
+        // that loses the race must not have bought time — and a transaction
+        // runs on one node. The host is the only writer that may set it from
+        // nothing or clear it: the manager rule below requires a deadline to
+        // already exist, so a manager can only ever push an existing one
+        // later, never create, clear or shorten one.
+        //
+        // PAUSE is published state, not a stopped local timer. The host sets
+        // `paused`, banks what was left in `remainingMs`, and clears
+        // `bid/deadline` — all in one update. Clearing the deadline is what
+        // makes this rule refuse every bid while paused, and the explicit
+        // `paused` clause below says so a second time on purpose. Only the
+        // host writes any of the three; nothing outside the host grant
+        // reaches `lot/paused` or `lot/remainingMs` at all.
+        //
+        // What these rules still cannot do is decide that a lot has ENDED.
+        // `now` tells them whether a write is late, and that is enough to
+        // refuse a late bid — but nothing here can write the sale, so
+        // resolution stays the host's job and its once-only-ness is enforced
+        // by the host being the only writer of `state` (see above) rather
+        // than by anything in this file.
         //
         // Price and winning seat live in the SAME node on purpose. Split
         // across two nodes they would need two writes, and between those
@@ -209,11 +236,26 @@
             //   not already winning      the winning seat must change
             //   the price only goes up   strictly greater, and by exactly
             //                            one of the three offered steps
+            //   the lot is running       not paused, and `now` is still
+            //                            before the deadline it carries
+            //   the clock only extends   the new deadline is the old one
+            //                            unchanged, or a later one no more
+            //                            than 12s out — see below
             //
             // The steps are duplicated in LIVE_CFG.raiseSteps in
             // index.html; a step added there and not here is a button that
             // always fails.
-            ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && data.exists() && newData.exists() && newData.child('seq').val() === data.child('seq').val() && newData.child('seat').isString() && root.child('rooms').child($room).child('seats').child(newData.child('seat').val()).child('uid').val() === auth.uid && newData.child('uid').val() === auth.uid && newData.child('seat').val() !== data.child('seat').val() && newData.child('price').isNumber() && newData.child('price').val() > data.child('price').val() && (newData.child('price').val() === data.child('price').val() + 1 || newData.child('price').val() === data.child('price').val() + 5 || newData.child('price').val() === data.child('price').val() + 10)",
+            //
+            // The 12000 in the last clause is LIVE_CFG.extendMs (10000) plus
+            // LIVE_CFG.clockToleranceMs (2000). A bidder computes its
+            // extended deadline from ITS estimate of server time and the
+            // write then takes a network hop, so a device whose
+            // .info/serverTimeOffset is a few hundred milliseconds
+            // optimistic needs some give or every late bid it makes is
+            // rejected. The tolerance is also the bound on the abuse: the
+            // furthest any single bid can push a deadline is 12 seconds from
+            // when the server sees it, whatever the client claims.
+            ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && data.exists() && newData.exists() && newData.child('seq').val() === data.child('seq').val() && newData.child('seat').isString() && root.child('rooms').child($room).child('seats').child(newData.child('seat').val()).child('uid').val() === auth.uid && newData.child('uid').val() === auth.uid && newData.child('seat').val() !== data.child('seat').val() && newData.child('price').isNumber() && newData.child('price').val() > data.child('price').val() && (newData.child('price').val() === data.child('price').val() + 1 || newData.child('price').val() === data.child('price').val() + 5 || newData.child('price').val() === data.child('price').val() + 10) && !root.child('rooms').child($room).child('lot').child('paused').exists() && data.child('deadline').isNumber() && now < data.child('deadline').val() && newData.child('deadline').isNumber() && newData.child('deadline').val() >= data.child('deadline').val() && (newData.child('deadline').val() === data.child('deadline').val() || newData.child('deadline').val() <= now + 12000)",
 
             ".validate": "newData.hasChildren(['seq', 'price'])",
 
@@ -222,8 +264,18 @@
             "seat": { ".validate": "newData.isString() && newData.val().matches(/^m[0-9]{1,2}$/)" },
             "uid": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128" },
             "at": { ".validate": "newData.isNumber()" },
+            "deadline": { ".validate": "newData.isNumber()" },
             "$other": { ".validate": false }
           },
+
+          // Host-only by omission: no rule anywhere below `lot` grants a
+          // non-host write, so the only '.write' these two are reachable
+          // through is the host grant on `lot` itself. `paused` is only ever
+          // true — a resumed lot deletes it rather than storing false, so
+          // 'is this lot paused' is one existence check here and in the bid
+          // rule above.
+          "paused": { ".validate": "newData.isBoolean() && newData.val() === true" },
+          "remainingMs": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3600000" },
 
           "$other": { ".validate": false }
         },
