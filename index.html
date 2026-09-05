@@ -2012,6 +2012,114 @@
       font-size: 11px;
     }
 
+
+    /* ---------- live bidding ----------
+       One row, directly under the lot panel, on every screen in the room —
+       host and viewer draw it from the same code with the same buttons, so
+       "the host bids from their own seat exactly as everyone else does" is
+       true by construction rather than by a second code path kept in step.
+
+       The three raise buttons print the RESULTING TOTAL, never the
+       increment: mid-auction the number people are shouting is the price,
+       and a button reading "+5" makes everyone do the arithmetic that the
+       button is there to save. They are wide and finger-sized because they
+       are tapped on a phone, repeatedly, fast. */
+    .bidbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 7px 14px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .bidbar[hidden] {
+      display: none;
+    }
+
+    .bid-label {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    /* The one number this row exists to publish. Tabular figures so a
+       price ticking 45 → 50 → 55 doesn't shift everything beside it. */
+    .bid-price {
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+
+    .bid-who {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--on-color);
+      background: var(--surface-3);
+    }
+
+    .bid-who.nobody {
+      background: transparent;
+      color: var(--text-3);
+      font-weight: 400;
+      padding-left: 0;
+    }
+
+    .bid-btns {
+      display: flex;
+      gap: 8px;
+    }
+
+    .bid-btns[hidden] {
+      display: none;
+    }
+
+    .bid-btn {
+      min-width: 72px;
+      padding: 9px 14px;
+      font-size: 19px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: var(--bg);
+      background: var(--select);
+      border: 1px solid var(--select);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    /* Disabled is not "slightly faded" here: an unaffordable raise has to
+       read as unavailable across a room, and the reason always sits in
+       .bid-note next to it rather than only in a tooltip nobody hovers. */
+    .bid-btn:disabled {
+      color: var(--text-3);
+      background: var(--surface-1);
+      border-color: var(--border);
+      cursor: not-allowed;
+    }
+
+    .bid-note {
+      color: var(--text-3);
+      font-size: 12px;
+    }
+
+    .bid-note.warn {
+      color: var(--warn);
+    }
+
+    .bid-note.you {
+      color: var(--ok);
+      font-weight: 600;
+    }
+
     /* ---------- viewer on a narrow screen ---------- */
 
     @media (max-width: 760px) {
@@ -2085,6 +2193,28 @@
       body.viewer .seatbar {
         padding: 5px 6px;
         gap: 6px;
+      }
+
+      /* The raise buttons are the only control a phone has in the whole app,
+         and they are tapped in a hurry — so on a narrow screen they take the
+         full width and grow rather than shrinking to fit beside the price. */
+      body.viewer .bidbar {
+        padding: 8px 10px;
+        gap: 8px;
+      }
+
+      body.viewer .bid-btns {
+        width: 100%;
+      }
+
+      body.viewer .bid-btn {
+        flex: 1;
+        min-width: 0;
+        padding: 13px 6px;
+      }
+
+      body.viewer .bid-note {
+        width: 100%;
       }
 
       body.viewer .log-head .log-hint {
@@ -2387,7 +2517,14 @@
       publishDebounceMs: 120,  // coalesces the render+publish burst of one action
       roomKeyStorage: "uclAuction.roomKey.v1",
       authTimeoutMs: 9000,     // how long a starting host waits for a uid
-      seatPrefix: "m"          // seat ids are seatPrefix + manager index
+      seatPrefix: "m",         // seat ids are seatPrefix + manager index
+
+      // The three raises a seated manager can make, as increments on the
+      // current price. MUST stay in step with the bid rule in
+      // database.rules.json, which accepts exactly these deltas and nothing
+      // else — a step added here and not there is a button that always
+      // fails. The buttons show the resulting total, not the step.
+      raiseSteps: [1, 5, 10]
     };
 
     // Seat ids are derived from the manager index and nothing else, so the
@@ -2498,8 +2635,11 @@
         requests: {},          // requesting uid -> { seat, at }
         seatsReady: false,     // has the seat list arrived at least once?
         seatError: "",         // last seat write that failed, if any
+        lot: null,             // the open lot: { player, openedAt, bid: {...} }
+        lotError: "",          // last host open/close that failed, if any
         onStatus: null,        // set by the UI
         onSeats: null,         // set by the UI
+        onLot: null,           // set by the UI (both roles)
         onRemoteState: null    // set by the UI (viewer only)
       };
 
@@ -2525,6 +2665,12 @@
         // Same contract as status(): identity chrome must never be able to
         // break the auction.
         if (L.onSeats) { try { L.onSeats(L); } catch (e) { /* ignore */ } }
+      }
+
+      function lotChanged() {
+        // Same contract again. A bid arriving from another device must never
+        // be able to throw its way into the host's assignment flow.
+        if (L.onLot) { try { L.onLot(L); } catch (e) { /* ignore */ } }
       }
 
       /* ---- identity ----
@@ -2759,6 +2905,13 @@
           stateRef = fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/state`);
           L.enabled = true;
           watchSeats();
+          // A lot left open by a previous host session would still be biddable
+          // — the bid rule asks for a seat, not for a live host — and SELECTED
+          // doesn't survive a reload either, so the two are brought back into
+          // agreement here: nothing is on the block until this host puts it
+          // there.
+          closeLot();
+          watchLot();
           status();
           window.addEventListener("pagehide", releaseHost);
           return { ok: true };
@@ -2927,6 +3080,102 @@
         return (L.uid && L.requests && L.requests[L.uid]) || null;
       }
 
+      /* ---- the open lot ----
+         One node, `rooms/$room/lot`, is the whole of live bidding:
+
+           { player, openedAt, bid: { seq, price, seat?, uid?, at? } }
+
+         `player` and `openedAt` are the host's — only the host opens a lot
+         and only the host closes one. `bid` is where the room writes: the
+         host seeds it at CONFIG.minBid with no seat (the opening price is
+         the existing minimum bid, not a second source for the same number),
+         and from then on every raise is a transaction on that node.
+
+         `seq` stamps one opening of one lot. Every bid must carry the seq
+         it saw back unchanged, so a tap still in flight when the host moves
+         to the next player cannot land on the new lot — the transaction
+         reads a seq it doesn't recognise and aborts.
+
+         Price and winner live in the SAME node deliberately. Splitting them
+         would mean two writes and a window where the price has moved but the
+         winner hasn't, which is exactly the interleaving the transaction is
+         here to prevent.
+
+         No timer lives here yet. When one does, it is a server-written
+         deadline beside `openedAt` and a `now < deadline` clause in the bid
+         rule — neither of which changes this shape. */
+
+      function lotRef() { return fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/lot`); }
+      function bidRef() { return fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/lot/bid`); }
+
+      function watchLot() {
+        fb.onValue(lotRef(), snap => {
+          L.lot = snap.val() || null;
+          lotChanged();
+        }, () => { L.lot = null; lotChanged(); });
+      }
+
+      // Host only. Opening replaces the node wholesale, which is also what
+      // resets the price and clears the previous winner — there is no
+      // separate "reset the bidding" step that could be forgotten.
+      function openLot(playerId) {
+        if (!fb || !L.enabled || L.role !== "host") return Promise.resolve();
+        return fb.set(lotRef(), {
+          player: String(playerId),
+          openedAt: fb.serverTimestamp(),
+          bid: {
+            // Server-corrected local time: unique and increasing per opening,
+            // which is all seq has to be.
+            seq: serverNow(),
+            price: CONFIG.minBid,
+            at: fb.serverTimestamp()
+          }
+        }).then(() => { L.lotError = ""; }, e => { L.lotError = errText(e); status(); });
+      }
+
+      // Host only. Removing the node is what closes the lot: with no node
+      // there is nothing for a bid transaction to run against, so the rules
+      // refuse every raise the instant the host closes.
+      function closeLot() {
+        if (!fb || L.role !== "host") return Promise.resolve();
+        return fb.remove(lotRef()).then(() => { L.lotError = ""; }, e => { L.lotError = errText(e); status(); });
+      }
+
+      /* Placing a bid. This is the one write in the app that genuinely races
+         — four phones can tap the same total in the same instant — so it is
+         the one write that must not be a plain set().
+
+         runTransaction runs its callback against the node's value AS THE
+         SERVER HOLDS IT, re-running it if the server had moved on, and only
+         commits if the callback returns a value. So `expected` — the price
+         this device was showing when the finger landed — is checked at
+         commit time, not at tap time: two managers who both saw 45 and both
+         tapped "50" produce exactly one commit and one abort, whichever
+         order the server happens to see them in.
+
+         applyLocally:false is what keeps a rejected bid from corrupting this
+         screen: without it the SDK would optimistically show the losing bid
+         as accepted and then snap it back. Nothing local changes until the
+         server has agreed. */
+      function placeBid(seq, expected, next) {
+        if (!fb || !L.enabled) return Promise.resolve({ ok: false, reason: "not connected" });
+        const seat = mySeat();
+        if (!seat) return Promise.resolve({ ok: false, reason: "you are not seated" });
+        let reason = "";
+        return fb.runTransaction(bidRef(), cur => {
+          if (!cur) { reason = "the lot is closed"; return; }
+          if (cur.seq !== seq) { reason = "a different lot is on the block now"; return; }
+          if (cur.seat === seat.id) { reason = "you are already the top bid"; return; }
+          if (cur.price !== expected) { reason = "the price moved to " + cur.price + " first"; return; }
+          // serverTimestamp() sentinels aren't allowed inside a transaction —
+          // same compromise claimHost() makes for heartbeatAt.
+          return { seq: cur.seq, price: next, seat: seat.id, uid: L.uid, at: serverNow() };
+        }, { applyLocally: false }).then(
+          res => res.committed ? { ok: true } : { ok: false, reason: reason || "it did not land" },
+          err => ({ ok: false, reason: errText(err) })
+        );
+      }
+
       /* ---- publishing (host) ---- */
 
       // Never awaited by a caller, never on the keyboard path: the click
@@ -2982,6 +3231,7 @@
           // below this line depends on it.
           startAuth().catch(() => { /* surfaced as L.authError in the seat bar */ });
           watchSeats();
+          watchLot();
 
           fb.onValue(fb.ref(fb.db, `${LIVE_CFG.root}/${L.roomKey}/state`), snap => {
             L.lastReceiveAt = Date.now();
@@ -3045,6 +3295,10 @@
       L.takeSeatAsHost = takeSeatAsHost;
       L.mySeat = mySeat;
       L.myRequest = myRequest;
+
+      L.openLot = openLot;
+      L.closeLot = closeLot;
+      L.placeBid = placeBid;
       return L;
     }
 
@@ -3252,6 +3506,24 @@
       // display only — the real log and its undo snapshots stay host-local).
       let REMOTE_LOG = [];
       let warnedPlayerMismatch = false;
+      // Viewer only: the lot id from the host's published snapshot. The live
+      // lot node wins over it whenever it exists — that node is written the
+      // instant the host picks a player, while the snapshot is debounced, so
+      // trusting the snapshot first would blank the bid row for the first
+      // fraction of a second of every lot.
+      let remoteLotId = null;
+
+      // Returns true when the lot actually changed, so the caller can decide
+      // whether a full repaint is worth it.
+      function syncViewerLot() {
+        const lot = LIVE.lot;
+        const liveId = lot && lot.player != null ? String(lot.player) : null;
+        const id = liveId || remoteLotId;
+        const next = id ? (BY_ID.get(id) || null) : null;
+        if (next === SELECTED) return false;
+        SELECTED = next;
+        return true;
+      }
 
       /* precompute per-record search/sort keys (records themselves untouched) */
       ALL.forEach(p => {
@@ -3876,6 +4148,240 @@
 
       lotPanel.append(lotEmpty, lotPlayer, lotMgrs);
 
+      /* ---------- live bidding row ----------
+         Drawn identically on the host and on every viewer, from LIVE.lot —
+         the open lot's price and winning seat — and from the seat this
+         browser happens to hold. There is no host branch in here: the host
+         is a manager with a seat like everyone else, so if they are seated
+         they get the same three buttons under the same rules, and if they
+         aren't they get the same prompt to sit down.
+
+         Built once and updated in place, never rebuilt: these buttons are
+         tapped repeatedly and fast, and replaceChildren() under a finger
+         mid-tap loses the tap.
+
+         Affordability comes from computeBid() — the same max-bid figure the
+         lot panel prints above this row and the same one the assignment bar
+         warns on. It is not recomputed here and there is no second formula. */
+
+      const bidBar = document.createElement("div");
+      bidBar.className = "bidbar";
+      bidBar.hidden = true;
+
+      const bidLabel = document.createElement("span");
+      bidLabel.className = "bid-label";
+      bidLabel.textContent = "Current bid";
+
+      const bidPriceEl = document.createElement("span");
+      bidPriceEl.className = "bid-price";
+      bidPriceEl.setAttribute("role", "status");
+      bidPriceEl.setAttribute("aria-live", "polite");
+
+      const bidWhoEl = document.createElement("span");
+      bidWhoEl.className = "bid-who";
+
+      const bidBtnWrap = document.createElement("div");
+      bidBtnWrap.className = "bid-btns";
+
+      const bidNoteEl = document.createElement("span");
+      bidNoteEl.className = "bid-note";
+      bidNoteEl.setAttribute("role", "status");
+      bidNoteEl.setAttribute("aria-live", "polite");
+
+      const bidButtons = LIVE_CFG.raiseSteps.map(step => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "bid-btn";
+        b.dataset.step = String(step);
+        b.addEventListener("click", () => placeRaise(step));
+        return b;
+      });
+      bidBtnWrap.append(...bidButtons);
+      bidBar.append(bidLabel, bidPriceEl, bidWhoEl, bidBtnWrap, bidNoteEl);
+
+      // One bid in flight at a time. A round trip is tens of milliseconds, and
+      // two overlapping taps from the same device would be racing themselves:
+      // the second would carry the price the first is already replacing, and
+      // land as a rejection this manager can do nothing about.
+      let bidInFlight = false;
+      // Last bid this screen has seen, so a winner changing out from under us
+      // can be reported as an outbid rather than only as a number that moved.
+      let lastBidSeen = null;
+
+      // The open lot, but only when it is the same player the panel above is
+      // showing. During the ~120ms between the host opening a lot and the
+      // debounced state snapshot catching up, the two can disagree; a bid row
+      // for one player under a photo of another would be worse than none.
+      function liveBid() {
+        const lot = LIVE.lot;
+        if (!lot || !lot.bid || !SELECTED) return null;
+        if (String(lot.player) !== String(SELECTED.id)) return null;
+        return lot.bid;
+      }
+
+      function bidSeatManager(seatId) {
+        const s = seatId ? LIVE.seats[seatId] : null;
+        return s ? (MANAGERS[s.manager] || null) : null;
+      }
+
+      // The tap. Never awaited by anything on screen: the buttons grey out for
+      // the round trip and the row repaints when the answer arrives, so a slow
+      // network makes bidding feel slow but never makes the app unresponsive.
+      function placeRaise(step) {
+        const bid = liveBid();
+        const seat = LIVE.mySeat();
+        if (!bid || !seat || bidInFlight) return;
+        const m = MANAGERS[seat.manager];
+        if (!m) return;
+        const expected = bid.price;
+        const next = expected + step;
+
+        if (bid.seat === seat.id) { toast("You are already the top bid.", "warn"); return; }
+
+        // The wallet limit again, at the moment of the tap rather than at the
+        // moment of the last paint — the rules cannot compute a max bid, so
+        // this check is the only thing standing between a stale enabled button
+        // and a manager who can't fill their squad.
+        const w = computeBid(m);
+        if (w.state === "full") { toast(`${m.name}'s squad is full — no bids left.`, "warn"); return; }
+        if (w.maxBid == null || next > w.maxBid) {
+          toast(`${next} is over ${m.name}'s max bid of ${fmtMoney(w.maxBid)}.`, "warn");
+          renderBidRow();
+          return;
+        }
+
+        bidInFlight = true;
+        renderBidRow();
+        LIVE.placeBid(bid.seq, expected, next).then(res => {
+          bidInFlight = false;
+          // Non-blocking by design: this fires repeatedly during fast bidding,
+          // and a dialog here would put a wall in front of the next tap.
+          if (!res.ok) toast(`Bid of ${next} did not land — ${res.reason}.`, "warn");
+          renderBidRow();
+        });
+      }
+
+      function renderBidRow() {
+        const bid = liveBid();
+        if (!LIVE.enabled || !bid) { bidBar.hidden = true; return; }
+        bidBar.hidden = false;
+
+        const price = isNum(bid.price) ? bid.price : CONFIG.minBid;
+        bidPriceEl.textContent = fmtMoney(price);
+
+        const winSeatId = bid.seat || null;
+        const winMgr = bidSeatManager(winSeatId);
+        if (winMgr) {
+          bidWhoEl.className = "bid-who";
+          bidWhoEl.style.background = winMgr.color;
+          bidWhoEl.textContent = winMgr.name + " leading";
+        } else {
+          bidWhoEl.className = "bid-who nobody";
+          bidWhoEl.style.background = "";
+          bidWhoEl.textContent = "opening price · no bids yet";
+        }
+
+        const seat = LIVE.mySeat();
+        bidBtnWrap.hidden = !seat;
+        if (!seat) {
+          // Unseated — host or viewer, same sentence. The lot and the price
+          // are still fully visible above; only the buttons are missing.
+          bidNoteEl.className = "bid-note";
+          bidNoteEl.textContent = LIVE.uid
+            ? "Watching only — take a seat above to bid."
+            : "Watching only — signing in…";
+          return;
+        }
+
+        const m = MANAGERS[seat.manager];
+        const w = m ? computeBid(m) : null;
+        const winning = !!(winSeatId && winSeatId === seat.id);
+
+        let blockAll = "";
+        if (!w) blockAll = "This seat has no manager.";
+        else if (bidInFlight) blockAll = "Sending…";
+        else if (winning) blockAll = "You are the top bid.";
+        else if (w.state === "full") blockAll = `${m.name}'s squad is full (${CONFIG.squadSize}/${CONFIG.squadSize}).`;
+        else if (w.state === "belowmin" || w.maxBid == null) blockAll = `${m.name} cannot afford another bid — max ${fmtMoney(w.maxBid)}, minimum ${CONFIG.minBid}.`;
+
+        const over = [];
+        bidButtons.forEach(b => {
+          const total = price + Number(b.dataset.step);
+          b.textContent = fmtMoney(total);
+          let why = blockAll;
+          if (!why && total > w.maxBid) {
+            why = `${total} is over your max bid of ${fmtMoney(w.maxBid)}.`;
+            over.push(fmtMoney(total));
+          }
+          b.disabled = !!why;
+          // The visible reason is the note below; the title is for the one
+          // person who does hover, not the explanation people rely on.
+          b.title = why || `Raise the bid to ${total}`;
+        });
+
+        if (winning) {
+          bidNoteEl.className = "bid-note you";
+          bidNoteEl.textContent = `You are the top bid at ${fmtMoney(price)} — you cannot raise yourself.`;
+        } else if (blockAll) {
+          bidNoteEl.className = "bid-note warn";
+          bidNoteEl.textContent = blockAll;
+        } else if (over.length) {
+          bidNoteEl.className = "bid-note warn";
+          bidNoteEl.textContent =
+            `Bidding as ${m.name} · max bid ${fmtMoney(w.maxBid)} — ${over.join(" and ")} would be over it.`;
+        } else {
+          bidNoteEl.className = "bid-note";
+          bidNoteEl.textContent = `Bidding as ${m.name} · max bid ${fmtMoney(w.maxBid)} · ${fmtMoney(w.remaining)} left.`;
+        }
+      }
+
+      // Every change to the open lot lands here, on both roles: a bid from
+      // any device, the host opening or closing, a disconnection dropping it.
+      function onLotChanged() {
+        const lot = LIVE.lot;
+        const bid = lot && lot.bid;
+        const seat = LIVE.mySeat();
+        const prev = lastBidSeen;
+        lastBidSeen = bid ? { seq: bid.seq, price: bid.price, seat: bid.seat || null } : null;
+
+        // Being outbid is the other half of "your bid did not land": one is a
+        // tap that lost, this is a tap that won and then stopped winning.
+        // Same non-blocking toast, no dialog.
+        if (seat && prev && bid && prev.seq === bid.seq &&
+          prev.seat === seat.id && bid.seat && bid.seat !== seat.id) {
+          const by = bidSeatManager(bid.seat);
+          toast(`Outbid — ${by ? by.name : "another manager"} is now at ${fmtMoney(bid.price)}.`, "warn");
+        }
+
+        if (READONLY) {
+          // The live lot node beats the debounced snapshot, so a viewer sees
+          // the new player at the same moment as its opening price.
+          if (syncViewerLot()) { render({ preserveScroll: true }); return; }
+          renderBidRow();
+          return;
+        }
+
+        seedPriceFromBid();
+        renderBidRow();
+        renderAssignBar();
+      }
+
+      // Host: keep the price box in step with the live bidding so closing the
+      // lot is Enter, Enter through the flow that already exists — no second
+      // path that assigns a player. It never fights the operator: the box is
+      // only refilled while it still holds exactly what this function last put
+      // there (or nothing at all), so a typed number always wins.
+      let autoPrice = null;
+      function seedPriceFromBid() {
+        if (READONLY || !SELECTED || phase !== "price") return;
+        const bid = liveBid();
+        if (!bid || !bid.seat) return;         // nobody has bid — leave the box empty
+        const cur = priceInput.value.trim();
+        if (cur !== "" && cur !== String(autoPrice)) return;
+        autoPrice = bid.price;
+        priceInput.value = String(bid.price);
+      }
+
       // Shared manager photo (+ colour-coded initials fallback) — used by both
       // the lot panel's manager cards and the teams view's headers, at whatever
       // size/class each context needs.
@@ -4175,7 +4681,7 @@
 
       const auctionView = document.createElement("div");
       auctionView.className = "auctionview";
-      auctionView.append(toolbar, walletBar, lotPanel, assignBar, main);
+      auctionView.append(toolbar, walletBar, lotPanel, bidBar, assignBar, main);
 
       const apptabs = document.createElement("div");
       apptabs.className = "apptabs";
@@ -5166,9 +5672,12 @@
         REMOTE_LOG = listOf(s.log);
 
         // SELECTED is what the lot panel and the wallet strip read, on both
-        // roles — the viewer just never sets it from a click.
-        const lotId = s.lot && s.lot.id != null ? String(s.lot.id) : null;
-        SELECTED = lotId ? (BY_ID.get(lotId) || null) : null;
+        // roles — the viewer just never sets it from a click. state.lot is
+        // unchanged and still published; it is now the FALLBACK, because the
+        // live lot node carries the same player id and arrives ahead of this
+        // debounced snapshot (see syncViewerLot).
+        remoteLotId = s.lot && s.lot.id != null ? String(s.lot.id) : null;
+        syncViewerLot();
 
         checkInvariants();
         render({ preserveScroll: true });
@@ -5235,6 +5744,13 @@
           }
           if (LIVE.publishError) {
             setLiveStatus("bad", "⚠ Publish failed — " + LIVE.publishError + " · last sent " + seen, null);
+            return;
+          }
+          // Opening or closing a lot is a separate write from the snapshot and
+          // can fail on its own — and a lot that failed to close is one people
+          // can still bid on, so it does not get to fail quietly.
+          if (LIVE.lotError) {
+            setLiveStatus("bad", "⚠ Lot write failed — " + LIVE.lotError + " · last published " + seen, null);
             return;
           }
           if (!LIVE.connected) {
@@ -5466,6 +5982,10 @@
 
       function renderSeats() {
         const box = document.createElement("div");
+        // Sitting down, being released, or another device taking the seat this
+        // one wanted all arrive here — and all of them change whether this
+        // browser may raise, so the bid row is repainted on the same event.
+        renderBidRow();
 
         if (!LIVE.enabled) { seatBar.hidden = true; return; }
 
@@ -5695,6 +6215,7 @@
           c.classList.toggle("picked", pendingManager === i);
         });
         renderLotPanel();
+        renderBidRow();
         renderTeams();
         renderLog();
       }
@@ -5725,8 +6246,18 @@
           : `1–${MANAGERS.length} pick manager → Enter confirm`;
         confirmBtn.disabled = !(phase === "manager" && pendingManager != null);
 
-        assignWarn.textContent = "";
         confirmBtn.textContent = "Confirm ⏎";
+        const warns = [];
+
+        // The lot is still open while the host is picking a manager, so the
+        // price they committed can be overtaken between Enter and Enter.
+        // Backspace already steps back to the price box; this is what tells
+        // them they need to.
+        const openBid = liveBid();
+        if (phase === "manager" && pendingPrice != null && openBid && openBid.price !== pendingPrice) {
+          warns.push(`⚠ Bidding has moved on — the lot is at ${fmtMoney(openBid.price)}, you are confirming ${fmtMoney(pendingPrice)}. Backspace to re-enter the price.`);
+        }
+
         if (phase === "manager" && pendingManager != null && pendingPrice != null) {
           const m = MANAGERS[pendingManager];
           const w = computeBid(m);
@@ -5734,12 +6265,14 @@
             const slotsAfter = w.slotsLeft - 1;
             const leftAfter = w.remaining - pendingPrice;
             const avg = slotsAfter > 0 ? (leftAfter / slotsAfter).toFixed(1) : leftAfter;
-            assignWarn.textContent =
+            warns.push(
               `⚠ ${pendingPrice} exceeds ${m.name}'s max bid (${w.maxBid}) — leaves ${leftAfter} for ` +
-              `${slotsAfter} slot${slotsAfter === 1 ? "" : "s"} (avg ${avg}, min ${CONFIG.minBid}).`;
+              `${slotsAfter} slot${slotsAfter === 1 ? "" : "s"} (avg ${avg}, min ${CONFIG.minBid}).`);
             confirmBtn.textContent = "Confirm anyway ⏎";
           }
         }
+
+        assignWarn.textContent = warns.join("   ");
       }
 
       /* ---------- assignment actions ---------- */
@@ -5757,7 +6290,13 @@
         pendingPrice = null;
         setPhase("price");
         priceInput.value = "";
+        autoPrice = null;
         assignErr.textContent = "";
+        // Opening the lot for real: player, opening price (CONFIG.minBid, via
+        // openLot — there is no second source for it), no winner yet. Fire and
+        // forget, exactly like the snapshot publish beside it; the click that
+        // picked the player has already repainted.
+        LIVE.openLot(p.id);
         renderAssignBar();
         renderWallets();
         LIVE.schedulePublish();      // a new lot is on the block
@@ -5771,6 +6310,16 @@
         if (raw === "" || !Number.isFinite(price)) { assignErr.textContent = "Enter a price."; return; }
         if (price < CONFIG.minBid) { assignErr.textContent = `Price must be a number ≥ ${CONFIG.minBid}.`; return; }
         pendingPrice = price;
+        // The seat that won the bidding is the obvious manager to hand the lot
+        // to, so it arrives pre-picked — but only when the price the host
+        // committed is the price that seat actually won at. 1–4 still
+        // overrides it and Backspace still steps back; no key does anything
+        // different than it did before.
+        const wonBid = liveBid();
+        if (wonBid && wonBid.seat && wonBid.price === price) {
+          const ws = LIVE.seats[wonBid.seat];
+          if (ws && MANAGERS[ws.manager]) pendingManager = ws.manager;
+        }
         assignErr.textContent = "";
         setPhase("manager");
         renderWallets();
@@ -5840,11 +6389,17 @@
 
       function endSelection(clearSearch) {
         if (READONLY) return;
+        // Closing the lot. Every way out of a lot lands here — confirmed sale,
+        // unsold, release, cancel — so there is exactly one place that closes
+        // one, and the sale itself has already gone through applyChange() on
+        // the existing assignment path above.
+        LIVE.closeLot();
         SELECTED = null;
         pendingManager = null;
         pendingPrice = null;
         setPhase("browse");
         priceInput.value = "";
+        autoPrice = null;
         priceInput.disabled = false;
         assignErr.textContent = "";
         if (clearSearch) search.value = "";
@@ -6014,6 +6569,7 @@
 
       LIVE.onStatus = renderLiveStatus;
       LIVE.onSeats = renderSeats;
+      LIVE.onLot = onLotChanged;
       if (READONLY) LIVE.onRemoteState = applyRemoteState;
       else LIVE.setPayloadBuilder(buildLivePayload);
 

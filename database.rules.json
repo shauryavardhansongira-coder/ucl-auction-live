@@ -12,6 +12,10 @@
   //   seats/mN   a named manager slot; carries the manager index,
   //              the display name, and the uid holding it (if any).
   //   requests   pending first-time claims, keyed by the asking uid.
+  //   lot        the player currently on the block, and the live
+  //              bidding on it. The host opens and closes it; the
+  //              seated managers raise it. This is the only node a
+  //              manager writes during an auction.
   //
   // A '.write' granted at an ancestor cascades down and cannot be
   // revoked by a child, so there is deliberately NO '.write' at
@@ -19,6 +23,16 @@
   // state. The room-key pattern is instead re-checked inside every
   // child '.write' below, so it is still enforced in '.write' on
   // every reachable path and not only in '.validate'.
+  //
+  // What these rules deliberately do NOT enforce: whether a manager can
+  // AFFORD the bid they are placing. The max bid is (remaining budget −
+  // remaining slots × minimum bid), which needs that manager's whole
+  // squad and the league's numbers out of CONFIG — none of which is
+  // reachable from here. Affordability is therefore a CLIENT-SIDE check
+  // only, and a hand-written request could bid straight past it.
+  // Everything else about a bid — that the bidder holds the seat they
+  // claim to be, that the price only ever goes up, and that it goes up
+  // by exactly 1, 5 or 10 — is enforced below.
   // ============================================================
 
   "rules": {
@@ -143,6 +157,75 @@
             "at": { ".validate": "newData.isNumber()" },
             "$other": { ".validate": false }
           }
+        },
+
+        // ============================================================
+        // The open lot. One node carries the whole of live bidding:
+        //
+        //   lot/player    who is on the block                host only
+        //   lot/openedAt  when it was opened                 host only
+        //   lot/bid       { seq, price, seat, uid, at }      the room
+        //
+        // Price and winning seat live in the SAME node on purpose. Split
+        // across two nodes they would need two writes, and between those
+        // two writes the price would have moved while the winner had not —
+        // exactly the interleaving the client's runTransaction on this
+        // node exists to prevent.
+        //
+        // `seq` stamps one opening of one lot; a bidder must echo it back
+        // unchanged, so a tap still in flight when the host moves on cannot
+        // land on the next player's lot.
+        //
+        // Only the host opens or closes a lot, and that grant sits on `lot`
+        // so a single set() can write the player and the opening price
+        // together and a single remove() can close it. A '.write' cascades
+        // down, so it also lets the host write `lot/bid` directly: the
+        // seat and step checks below constrain MANAGERS, not the host.
+        // That is deliberate rather than overlooked — the host already
+        // writes every sale, every price and every seat in this room, so
+        // constraining their bids would be theatre. Their own raises go
+        // through the same client transaction as everyone else's.
+        // ============================================================
+        "lot": {
+          ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && root.child('rooms').child($room).child('host').child('uid').val() === auth.uid",
+          ".validate": "newData.hasChildren(['player', 'bid'])",
+
+          "player": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64" },
+          "openedAt": { ".validate": "newData.isNumber()" },
+
+          "bid": {
+            // A raise. The one write a seated manager makes during an
+            // auction, and the only rule in this file where two clients
+            // genuinely race — so every clause here is about making the
+            // outcome of that race decidable by the server alone:
+            //
+            //   the lot exists           data.exists() — no lot, no bids,
+            //                            which is what closing a lot means
+            //   same lot                 seq carried through untouched
+            //   a real seat, THEIRS      the seat named in the write must
+            //                            be held by the calling uid, so a
+            //                            manager can neither bid without a
+            //                            seat nor bid as somebody else
+            //   not already winning      the winning seat must change
+            //   the price only goes up   strictly greater, and by exactly
+            //                            one of the three offered steps
+            //
+            // The steps are duplicated in LIVE_CFG.raiseSteps in
+            // index.html; a step added there and not here is a button that
+            // always fails.
+            ".write": "auth != null && $room.matches(/^[a-hjkmnp-z2-9]{12}$/) && data.exists() && newData.exists() && newData.child('seq').val() === data.child('seq').val() && newData.child('seat').isString() && root.child('rooms').child($room).child('seats').child(newData.child('seat').val()).child('uid').val() === auth.uid && newData.child('uid').val() === auth.uid && newData.child('seat').val() !== data.child('seat').val() && newData.child('price').isNumber() && newData.child('price').val() > data.child('price').val() && (newData.child('price').val() === data.child('price').val() + 1 || newData.child('price').val() === data.child('price').val() + 5 || newData.child('price').val() === data.child('price').val() + 10)",
+
+            ".validate": "newData.hasChildren(['seq', 'price'])",
+
+            "seq": { ".validate": "newData.isNumber()" },
+            "price": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000" },
+            "seat": { ".validate": "newData.isString() && newData.val().matches(/^m[0-9]{1,2}$/)" },
+            "uid": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128" },
+            "at": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          },
+
+          "$other": { ".validate": false }
         },
 
         "$other": { ".validate": false }
