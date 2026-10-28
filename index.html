@@ -1888,6 +1888,14 @@
       display: none;
     }
 
+    /* Manager-cards / lot-detail toggles — shown only in portrait under
+       760px (see the nested media query below); hidden everywhere else,
+       including landscape and desktop viewer, so tapping them off-portrait
+       is not even reachable. */
+    .paneltoggle {
+      display: none;
+    }
+
     /* Read-only: nothing in the mirrored views is clickable, so nothing
        should advertise that it is. */
     body.viewer tbody tr.r,
@@ -2143,6 +2151,31 @@
       cursor: not-allowed;
     }
 
+    /* The freeze after a price change is not "unavailable" — it is "wait a
+       beat" — so it can't share the flat grey :disabled look above with
+       every other refusal reason, or it would read as broken rather than
+       momentary. A pulsing accent border says "about to come back" instead.
+       Higher specificity than .bid-btn:disabled by having two classes, so
+       it always wins when both would otherwise apply. */
+    .bid-btn.bid-btn-frozen:disabled {
+      color: var(--accent);
+      background: var(--surface-1);
+      border-color: var(--accent);
+      animation: bidFreezePulse 1s ease-in-out infinite;
+    }
+
+    @keyframes bidFreezePulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: .5;
+      }
+    }
+
     .bid-note {
       color: var(--text-3);
       font-size: 12px;
@@ -2150,6 +2183,10 @@
 
     .bid-note.warn {
       color: var(--warn);
+    }
+
+    .bid-note.frozen {
+      color: var(--accent);
     }
 
     .bid-note.you {
@@ -2226,7 +2263,9 @@
     }
 
     @keyframes clockpulse {
-      50% { opacity: .5; }
+      50% {
+        opacity: .5;
+      }
     }
 
     /* Paused is published state, not a stopped local timer, so it reads the
@@ -2257,7 +2296,13 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .bid-clock.urgent { animation: none; }
+      .bid-clock.urgent {
+        animation: none;
+      }
+
+      .bid-btn.bid-btn-frozen:disabled {
+        animation: none;
+      }
     }
 
     /* Host-only, and deliberately not sitting among the raise buttons: it
@@ -2439,6 +2484,32 @@
       body.viewer .log-row {
         flex-wrap: wrap;
       }
+
+      /* ---------- portrait phone: collapsible sections ----------
+         Nested inside the existing 760px breakpoint rather than a new
+         one — same width number, with an orientation qualifier ANDed
+         onto it. Landscape phones under 760px keep every rule above this
+         and none of what follows: they have enough height that the old
+         always-everything-visible layout still works.
+
+         Three sections the person controls the visibility of: manager
+         cards, the remaining lot detail (player photo/name/stats), and
+         the player list below. Never one of them: the pinned bid row —
+         clock, price, leading manager, raise buttons — which stays put
+         and un-collapsible in every case, portrait included. */
+      @media (orientation: portrait) {
+        body.viewer .paneltoggle {
+          display: inline-block;
+        }
+
+        body.viewer .auctionview.mgrscollapsed .lot-mgrs {
+          display: none;
+        }
+
+        body.viewer .auctionview.lotdetailcollapsed .lot-player {
+          display: none;
+        }
+      }
     }
   </style>
 </head>
@@ -2461,8 +2532,8 @@
       // red/green pair; a fifth manager with no colour set here falls back
       // to an auto-generated one (see managerColor()).
       managers: [
-        { name: "Rizzie", photo: "assets/managers/1.jpeg", color: "#5b9bff" },
-        { name: "Shreyas", photo: "assets/managers/2.jpeg", color: "#e2953a" },
+        { name: "Rishi", photo: "assets/managers/1.jpeg", color: "#5b9bff" },
+        { name: "Saksham", photo: "assets/managers/2.jpeg", color: "#e2953a" },
         { name: "Savya", photo: "assets/managers/3.jpeg", color: "#b47ee8" },
         { name: "Shauryavardhan", photo: "assets/managers/4.jpeg", color: "#2fb8ac" }
       ],
@@ -2796,7 +2867,17 @@
       // anything. Its lot snapshot may still be the one from before the
       // drop, and committing a sale at a price that has since moved is
       // worse than resolving a second late.
-      resolveSettleMs: 1200
+      resolveSettleMs: 1200,
+
+      // After ANY accepted price change on the open lot, every raise button
+      // on every seat — not just the outbid one — freezes for this long.
+      // The totals printed on them still update immediately to the new
+      // true price (never stale); only the tap is refused. This is what
+      // stops a tap already in flight, aimed at a number the finger read a
+      // moment ago, from landing on a price it never saw. Purely a
+      // client-side input lock: the deadline, the rules and the transaction
+      // itself do not know this exists.
+      raiseFreezeMs: 1000
     };
 
     // Seat ids are derived from the manager index and nothing else, so the
@@ -4826,6 +4907,32 @@
       // Last bid this screen has seen, so a winner changing out from under us
       // can be reported as an outbid rather than only as a number that moved.
       let lastBidSeen = null;
+
+      /* ---- the raise freeze ----
+         A plain wall-clock timeout, not anything tied to the lot clock or
+         to further renders: armed once, it clears itself exactly
+         raiseFreezeMs later regardless of what else happens to the lot in
+         the meantime — paused, resumed, resolved, reopened. That is what
+         guarantees buttons never end up stuck disabled: there is no other
+         path back to "unfrozen" that a pause or a resolution could skip. */
+      let freezeUntil = 0;
+      let freezeTimer = null;
+      function armFreeze() {
+        freezeUntil = Date.now() + LIVE_CFG.raiseFreezeMs;
+        clearTimeout(freezeTimer);
+        freezeTimer = setTimeout(() => { freezeUntil = 0; freezeTimer = null; renderBidRow(); }, LIVE_CFG.raiseFreezeMs);
+      }
+      // Called whenever the freeze would be meaningless to carry forward —
+      // a new lot opening, or this lot closing. Without this, a freeze
+      // armed a moment before either event would keep comparing Date.now()
+      // against a deadline that no longer means anything for what's on
+      // screen now, even though it would still clear itself in time.
+      function clearFreeze() {
+        freezeUntil = 0;
+        clearTimeout(freezeTimer);
+        freezeTimer = null;
+      }
+      function isFrozen() { return Date.now() < freezeUntil; }
       // Host: every lot opening this session has already settled, by seq.
       // The idempotency key for automatic resolution — see maybeResolveLot.
       const resolvedSeqs = new Set();
@@ -5229,7 +5336,7 @@
           const w = mgr ? computeBid(mgr) : null;
           note = w && w.state === "normal"
             ? `Pick a player from the list to put them up — you open the bidding at ${fmtMoney(CONFIG.minBid)}` +
-              ` (your max bid is ${fmtMoney(w.maxBid)}).`
+            ` (your max bid is ${fmtMoney(w.maxBid)}).`
             : "Your turn — but you cannot open a lot right now.";
         } else if (mgr) {
           note = `${mgr.name} is choosing the next player.`;
@@ -5426,6 +5533,12 @@
         else if (w.state === "full") blockAll = `${m.name}'s squad is full (${CONFIG.squadSize}/${CONFIG.squadSize}).`;
         else if (w.state === "belowmin" || w.maxBid == null) blockAll = `${m.name} cannot afford another bid — max ${fmtMoney(w.maxBid)}, minimum ${CONFIG.minBid}.`;
 
+        // The freeze never hides behind blockAll or the max-bid check — it
+        // needs its own distinct look (see .bid-btn-frozen) so a manager
+        // can tell "wait a second, the price just moved" apart from "you
+        // can't afford this" or "you're already winning". It only ever
+        // ADDS a reason on top of those, never overrides one already there.
+        const frozen = isFrozen();
         const over = [];
         bidButtons.forEach(b => {
           const total = price + Number(b.dataset.step);
@@ -5435,10 +5548,12 @@
             why = `${total} is over your max bid of ${fmtMoney(w.maxBid)}.`;
             over.push(fmtMoney(total));
           }
-          b.disabled = !!why;
+          const freezeOnly = !why && frozen;
+          b.disabled = !!(why || freezeOnly);
+          b.classList.toggle("bid-btn-frozen", freezeOnly);
           // The visible reason is the note below; the title is for the one
           // person who does hover, not the explanation people rely on.
-          b.title = why || `Raise the bid to ${total}`;
+          b.title = why || (freezeOnly ? "Price just changed — one moment before you can bid." : `Raise the bid to ${total}`);
         });
 
         // A stopped clock is the one thing that outranks "you are winning" in
@@ -5458,6 +5573,9 @@
           bidNoteEl.className = "bid-note warn";
           bidNoteEl.textContent =
             `Bidding as ${m.name} · max bid ${fmtMoney(w.maxBid)} — ${over.join(" and ")} would be over it.`;
+        } else if (frozen) {
+          bidNoteEl.className = "bid-note frozen";
+          bidNoteEl.textContent = `Price just changed to ${fmtMoney(price)} — bidding unlocks in a moment.`;
         } else {
           bidNoteEl.className = "bid-note";
           bidNoteEl.textContent = `Bidding as ${m.name} · max bid ${fmtMoney(w.maxBid)} · ${fmtMoney(w.remaining)} left.`;
@@ -5480,6 +5598,21 @@
           prev.seat === seat.id && bid.seat && bid.seat !== seat.id) {
           const by = bidSeatManager(bid.seat);
           toast(`Outbid — ${by ? by.name : "another manager"} is now at ${fmtMoney(bid.price)}.`, "warn");
+        }
+
+        // The freeze exists for exactly one situation: THIS lot's price
+        // moving out from under a tap that hadn't landed yet. A brand-new
+        // lot (a new seq) or the lot disappearing altogether — closed,
+        // resolved, connection dropped — starts everyone fresh: there is
+        // no stale number left over to protect anyone from, so the freeze
+        // is cleared rather than carried into a state it was never meant
+        // to cover. This is also what keeps a pause/resolve from ever
+        // leaving buttons stuck: closing a lot always clears it here, and
+        // a freeze already running clears itself on its own timer either way.
+        if (!bid || !prev || prev.seq !== bid.seq) {
+          clearFreeze();
+        } else if (prev.price !== bid.price) {
+          armFreeze();
         }
 
         // A lot opening or closing is also what puts the nomination row on
@@ -7954,7 +8087,28 @@
 
       /* ---------- viewer-only chrome ---------- */
 
+      // Which of the three collapsible sections (manager cards, the
+      // remaining lot detail, the player list) this browser last chose to
+      // have open — deliberately its own localStorage key, nowhere near
+      // STORAGE_KEY: this is which panels happen to be open on one phone,
+      // not auction state, and must never end up inside an export or the
+      // autosave. Missing keys (first visit, or a panel this browser has
+      // never touched) mean "no explicit choice yet" — applyPanelState()
+      // below then falls back to the sensible-for-a-bidder default.
+      const PANEL_PREFS_KEY = "uclAuction.panelPrefs.v1";
+      function loadPanelPrefs() {
+        try {
+          const obj = JSON.parse(localStorage.getItem(PANEL_PREFS_KEY) || "{}");
+          return (obj && typeof obj === "object") ? obj : {};
+        } catch (e) { return {}; }
+      }
+      function savePanelPrefs(prefs) {
+        try { localStorage.setItem(PANEL_PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* best effort */ }
+      }
+
       if (READONLY) {
+        const panelPrefs = loadPanelPrefs();
+
         // The lot panel and the wallet strip are what a viewer watches; the
         // 900-row table is reference material, and on a phone it pushes both
         // of them off the screen. Collapsed by default on a narrow viewport,
@@ -7962,21 +8116,87 @@
         const listToggle = document.createElement("button");
         listToggle.type = "button";
         listToggle.className = "mf-btn listtoggle";
-        const narrow = window.matchMedia && window.matchMedia("(max-width: 760px)").matches;
-        auctionView.classList.toggle("listcollapsed", narrow);
+
+        // In portrait specifically, two more sections become independently
+        // collapsible — manager cards and the remaining lot detail — because
+        // between those, the player list, and the pinned bid row there is no
+        // longer room for everything at once. These two buttons only ever
+        // become visible under the nested portrait media query (see CSS), so
+        // in landscape or on desktop they are not present and not tappable —
+        // the toggle mechanism has no effect there regardless of stored state.
+        const mgrsToggle = document.createElement("button");
+        mgrsToggle.type = "button";
+        mgrsToggle.className = "mf-btn paneltoggle";
+
+        const lotToggle = document.createElement("button");
+        lotToggle.type = "button";
+        lotToggle.className = "mf-btn paneltoggle";
+
+        function isPortraitNarrow() {
+          return !!(window.matchMedia && window.matchMedia("(max-width: 760px) and (orientation: portrait)").matches);
+        }
+
         const syncToggle = () => {
           listToggle.textContent = auctionView.classList.contains("listcollapsed") ? "Show players ▾" : "Hide players ▴";
         };
+        const syncMgrsToggle = () => {
+          mgrsToggle.textContent = auctionView.classList.contains("mgrscollapsed") ? "Show managers ▾" : "Hide managers ▴";
+        };
+        const syncLotToggle = () => {
+          lotToggle.textContent = auctionView.classList.contains("lotdetailcollapsed") ? "Show player ▾" : "Hide player ▴";
+        };
+
+        // Defaults on a panel this browser has no stored choice for yet:
+        // sensible for a bidder in portrait (list open, manager cards and
+        // lot detail collapsed to give it room) and exactly the old
+        // behaviour everywhere else (list collapsed only when narrow,
+        // the other two never collapsed — they have no toggle to collapse
+        // them with outside portrait anyway). Re-run on rotation so a phone
+        // turned mid-auction gets the right layout without a reload, but a
+        // panel this browser HAS chosen a state for keeps that choice in
+        // both orientations — rotating never fights a manual pick.
+        function applyPanelState() {
+          const portrait = isPortraitNarrow();
+          const narrow = window.matchMedia && window.matchMedia("(max-width: 760px)").matches;
+          auctionView.classList.toggle("listcollapsed",
+            panelPrefs.list != null ? panelPrefs.list : (portrait ? false : narrow));
+          auctionView.classList.toggle("mgrscollapsed",
+            panelPrefs.mgrs != null ? panelPrefs.mgrs : portrait);
+          auctionView.classList.toggle("lotdetailcollapsed",
+            panelPrefs.lot != null ? panelPrefs.lot : portrait);
+          syncToggle();
+          syncMgrsToggle();
+          syncLotToggle();
+        }
+        applyPanelState();
+        window.addEventListener("resize", applyPanelState);
+        window.addEventListener("orientationchange", applyPanelState);
+
         listToggle.addEventListener("click", () => {
           auctionView.classList.toggle("listcollapsed");
+          panelPrefs.list = auctionView.classList.contains("listcollapsed");
+          savePanelPrefs(panelPrefs);
           syncToggle();
         });
-        syncToggle();
-        toolbar.appendChild(listToggle);
+        mgrsToggle.addEventListener("click", () => {
+          auctionView.classList.toggle("mgrscollapsed");
+          panelPrefs.mgrs = auctionView.classList.contains("mgrscollapsed");
+          savePanelPrefs(panelPrefs);
+          syncMgrsToggle();
+        });
+        lotToggle.addEventListener("click", () => {
+          auctionView.classList.toggle("lotdetailcollapsed");
+          panelPrefs.lot = auctionView.classList.contains("lotdetailcollapsed");
+          savePanelPrefs(panelPrefs);
+          syncLotToggle();
+        });
+        toolbar.append(listToggle, mgrsToggle, lotToggle);
+
         // The list is what a manager nominates from, so a turn starting opens
         // it. Only ever opens: a manager who has deliberately collapsed it
         // again mid-turn is not fought over it, because this runs on the turn
-        // CHANGING, not on every tick.
+        // CHANGING, not on every tick. Deliberately not persisted — this is
+        // the app opening the list FOR someone, not someone choosing to open it.
         expandPlayerList = () => {
           if (!auctionView.classList.contains("listcollapsed")) return;
           auctionView.classList.remove("listcollapsed");
