@@ -310,6 +310,14 @@
       display: none;
     }
 
+    /* Squad picker — built for viewers only, and shown only by the
+       body.viewer rule inside the max-width:760px block. Everywhere else
+       it stays display:none, so a desktop viewer still gets four squads
+       side by side and the host never has one. */
+    .team-picker {
+      display: none;
+    }
+
     /* Manager identity colour as a top edge on their column — paired,
      as everywhere else, with the name text right beside the photo. */
     .team-col {
@@ -1311,6 +1319,10 @@
     .club .nm {
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .club .code {
+      display: none;
     }
 
     .pos {
@@ -2334,6 +2346,192 @@
         font-size: 14px;
       }
 
+      /* ---------- one document, one scroll ----------
+         Everywhere else the app is locked to the screen height (html, body
+         and #app are 100% tall, flex children are min-height:0) and only the
+         player list, Teams columns and log scroll, each inside its own box.
+         On a phone the bars above the list leave it a sliver of that box and
+         a swipe on the page goes nowhere. Here the height lock comes off and
+         the three views take their natural height, so the browser's own page
+         scroll carries everything. The min-height keeps a short view (an
+         empty log) from leaving the bottom of the screen unpainted. */
+      body.viewer,
+      body.viewer #app {
+        height: auto;
+        min-height: 100%;
+      }
+
+      body.viewer .auctionview,
+      body.viewer .teamsview,
+      body.viewer .logview {
+        flex: none;
+        min-height: auto;
+        overflow: visible;
+      }
+
+      body.viewer .team-body {
+        flex: none;
+        overflow: visible;
+      }
+
+      /* The list takes its full height in the page flow. overflow-y is left
+         to the browser: setting overflow-x makes it compute to auto, but with
+         height:auto the box is always exactly as tall as its content, so it
+         never scrolls vertically and a vertical swipe goes to the page. The
+         x-axis stays because the table is ~680px of fixed-width columns —
+         without it the whole page would scroll sideways, and take the stuck
+         bid row with it. */
+      body.viewer .main {
+        flex: none;
+        overflow: visible;
+      }
+
+      /* ---------- the player table, fitted to the phone ----------
+         The table is table-layout:fixed, so column widths come from the
+         <col>s alone and the cells just clip. Target: fits 360px with no
+         sideways scroll. Fixed columns add up to ~200px:
+           photo 34 + club 56 + pos 38 + val 38 + pts 34
+         and Name is the only auto column, so it gets everything left over
+         (~160px at 360) and truncates. Cell side padding drops 8px -> 4px.
+
+         G, A, Min and the trailing spacer (.c-off) are squeezed to zero
+         width rather than display:none: the cells stay in the grid, so the
+         position-group rows (colspan = all columns) still line up. The
+         <col> widths are set inline by the JS for desktop, hence !important. */
+      body.viewer col.c-off {
+        width: 0 !important;
+      }
+
+      body.viewer col.c-name {
+        width: auto !important;
+      }
+
+      body.viewer col.c-photo {
+        width: 34px !important;
+      }
+
+      body.viewer col.c-club {
+        width: 56px !important;
+      }
+
+      body.viewer col.c-position {
+        width: 38px !important;
+      }
+
+      body.viewer col.c-value {
+        width: 38px !important;
+      }
+
+      body.viewer col.c-points {
+        width: 34px !important;
+      }
+
+      body.viewer thead th {
+        padding-left: 4px;
+        padding-right: 4px;
+      }
+
+      body.viewer tbody tr.r td {
+        padding-left: 4px;
+        padding-right: 4px;
+      }
+
+      body.viewer thead th.c-off,
+      body.viewer tbody tr.r td.c-off {
+        width: 0;
+        max-width: 0;
+        padding: 0;
+        overflow: hidden;
+        visibility: hidden;
+      }
+
+      /* Club: crest + 3-letter code. The crest's own text fallback (.cr-txt)
+         is the same code, so it is hidden to avoid printing it twice. */
+      body.viewer .club {
+        gap: 4px;
+      }
+
+      body.viewer .club .nm,
+      body.viewer .club .cr-txt {
+        display: none;
+      }
+
+      body.viewer .club .code {
+        display: inline;
+        flex: none;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text-2);
+      }
+
+      body.viewer .c-position .pos {
+        padding-left: 4px;
+        padding-right: 4px;
+      }
+
+      /* Name: truncates. The sold/unsold marker moves under the name instead
+         of beside it — "Shauryavardhan · 120" next to the name would leave the
+         name a few letters. Available rows have no marker (:empty), so only
+         sold/unsold rows get taller. */
+      body.viewer .nmwrap {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+        max-width: 100%;
+      }
+
+      body.viewer .nmwrap .nm {
+        max-width: 100%;
+      }
+
+      /* The table header and the position-group rows stick to the top of
+         their scroll box on desktop. With that box gone they would stick to
+         the top of the screen — underneath the stuck bid row. They scroll
+         away with the list instead: the bid row's height changes with the
+         lot (wrapped note, nomination row instead), and a header offset that
+         is ever stale would hide the header under it. */
+      body.viewer thead th,
+      body.viewer tr.grp td {
+        position: static;
+      }
+
+      /* The bid row (during a lot) and the nomination row (while it shows)
+         stay at the top of the screen while the page scrolls. They are
+         flex items of .auctionview, which now spans the whole list, so they
+         stay stuck for the full length of it. [hidden] on either one is
+         what un-sticks it between lots: a hidden element takes no space. */
+      body.viewer .bidbar,
+      body.viewer .turnbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+
+      body.viewer .bidbar[hidden] {
+        display: none;
+      }
+
+      /* Teams: one squad at a time, chosen from the picker. */
+      body.viewer .team-picker {
+        display: block;
+      }
+
+      body.viewer .team-picker select {
+        width: 100%;
+        padding: 10px 12px;
+        /* 16px stops iOS zooming the page when the select is focused. */
+        font-size: 16px;
+        color: var(--text);
+        background: var(--surface-2);
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+      }
+
+      body.viewer .team-col:not(.team-sel) {
+        display: none;
+      }
+
       body.viewer .apptabs {
         flex-wrap: wrap;
         gap: 4px;
@@ -2405,9 +2603,49 @@
       /* The raise buttons are the only control a phone has in the whole app,
          and they are tapped in a hurry — so on a narrow screen they take the
          full width and grow rather than shrinking to fit beside the price. */
+      /* Compact, because it is stuck over the list: clock on the left,
+         "Current bid" over the price in the middle, leader chip on the
+         right, then the raise buttons across the full width. */
       body.viewer .bidbar {
-        padding: 8px 10px;
-        gap: 8px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 2px 10px;
+        padding: 5px 10px 6px;
+      }
+
+      body.viewer .bidbar > .bid-clock {
+        grid-column: 1;
+        grid-row: 1 / span 2;
+      }
+
+      body.viewer .bidbar > .bid-label {
+        grid-column: 2;
+        grid-row: 1;
+        align-self: end;
+      }
+
+      body.viewer .bidbar > .bid-price {
+        grid-column: 2;
+        grid-row: 2;
+        align-self: start;
+      }
+
+      body.viewer .bidbar > .bid-who {
+        grid-column: 3;
+        grid-row: 1 / span 2;
+        justify-self: end;
+      }
+
+      body.viewer .bidbar > .bid-btns {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        margin-top: 3px;
+      }
+
+      body.viewer .bidbar > .bid-note {
+        grid-column: 1 / -1;
+        grid-row: 4;
       }
 
       body.viewer .bid-btns {
@@ -2417,17 +2655,23 @@
       body.viewer .bid-btn {
         flex: 1;
         min-width: 0;
-        padding: 13px 6px;
+        padding: 9px 6px;
+        font-size: 18px;
       }
 
       body.viewer .bid-note {
         width: 100%;
       }
 
+      /* An empty note would still cost a grid/flex gap. */
+      body.viewer .bid-note:empty {
+        display: none;
+      }
+
       /* On a phone the countdown and the price are the screen. The bid row
          is pulled above the lot panel — four manager cards two-up push it
-         under the fold otherwise — and the clock takes the whole first
-         line at a size that reads from the other side of the room. */
+         under the fold otherwise — and, stuck over the list, it is kept as
+         small as still reads from arm's length. */
       body.viewer .toolbar,
       body.viewer .walletbar {
         order: -2;
@@ -2439,8 +2683,8 @@
       }
 
       body.viewer .turnbar {
-        padding: 8px 10px;
-        gap: 8px;
+        padding: 5px 10px 6px;
+        gap: 2px 8px;
       }
 
       body.viewer .turnbar .bid-clock {
@@ -2449,7 +2693,7 @@
       }
 
       body.viewer .turnbar .bid-clock-num {
-        font-size: 30px;
+        font-size: 26px;
       }
 
       body.viewer .turnbar .bid-note {
@@ -2457,24 +2701,25 @@
       }
 
       body.viewer .bid-clock {
-        width: 100%;
+        width: auto;
+        min-width: 0;
         flex-direction: row;
         align-items: baseline;
-        gap: 8px;
+        gap: 3px 6px;
         flex-wrap: wrap;
       }
 
       body.viewer .bid-clock-num {
-        font-size: 46px;
+        font-size: 32px;
       }
 
       body.viewer .bid-clock-bar {
         width: 100%;
-        height: 6px;
+        height: 4px;
       }
 
       body.viewer .bid-price {
-        font-size: 34px;
+        font-size: 28px;
       }
 
       body.viewer .log-head .log-hint {
@@ -4451,6 +4696,14 @@
       COLS.push({ key: "spacer", label: "", w: "", render: () => "" });
       const NCOL = COLS.length;
 
+      // Every column's col/th/td carries `c-<key>`, and the ones a phone has
+      // no room for also carry `c-off`. Both are inert classes: only the
+      // body.viewer rules under 760px (see the table block there) read them.
+      // The cells stay in the table — only their width goes to zero — so the
+      // position-group rows' colspan still matches the column count.
+      const PHONE_OFF = new Set(["goals", "assists", "mins", "spacer"]);
+      const colClass = c => "c-" + c.key + (PHONE_OFF.has(c.key) ? " c-off" : "");
+
       /* ---------- cell renderers ---------- */
 
       function textFallback(p) {
@@ -4545,6 +4798,12 @@
         nm.className = "nm";
         nm.textContent = p.club;
         wrap.appendChild(nm);
+        // The short form for a phone, where the full name has no room. Hidden
+        // by default; the body.viewer rules under 760px swap it for .nm.
+        const code = document.createElement("span");
+        code.className = "code";
+        code.textContent = p.clubCode || norm(p.club).slice(0, 3).toUpperCase();
+        wrap.appendChild(code);
         return wrap;
       }
 
@@ -4563,7 +4822,7 @@
         tr.className = "r";
         for (const c of COLS) {
           const td = document.createElement("td");
-          if (c.num) td.className = c.key === "value" ? "val" : "num";
+          td.className = (c.num ? (c.key === "value" ? "val " : "num ") : "") + colClass(c);
           const out = c.render(p);
           if (out instanceof Node) td.appendChild(out);
           else td.textContent = out;
@@ -6035,6 +6294,7 @@
       const colgroup = document.createElement("colgroup");
       for (const c of COLS) {
         const col = document.createElement("col");
+        col.className = colClass(c);
         if (c.w) col.style.width = c.w;
         colgroup.appendChild(col);
       }
@@ -6045,7 +6305,7 @@
       for (const c of COLS) {
         const th = document.createElement("th");
         th.textContent = c.label;
-        if (c.num) th.className = "num";
+        th.className = (c.num ? "num " : "") + colClass(c);
         if (c.title) th.title = c.title;
         htr.appendChild(th);
       }
@@ -6511,7 +6771,72 @@
       });
       teamsView.append(...teamCols.map(t => t.col));
 
+      /* ---- squad picker (viewers only) ----
+         On a phone four squads stacked is a very long page, so the Teams tab
+         opens with a dropdown and shows one squad. The dropdown and the
+         one-squad rule are both CSS-scoped to `body.viewer` under 760px
+         (.team-picker, .team-col:not(.team-sel)); the JS only keeps the
+         dropdown and the .team-sel marker current. Wider screens ignore both
+         and show every column. The host never builds one.
+
+         The choice is remembered under its own localStorage key, nowhere
+         near STORAGE_KEY: it is which squad one phone last looked at, so it
+         must not reach the autosave, the export, or anything published.
+         Until the person has actually picked, there is no stored choice and
+         the selection follows the seat this device holds. */
+      const TEAM_PICK_KEY = "uclAuction.teamPick.v1";
+      let teamPickChoice = null;     // manager id the person picked, null = not yet
+      let teamPicker = null;
+      const teamPickerOpts = [];
+
+      if (READONLY) {
+        try {
+          const raw = localStorage.getItem(TEAM_PICK_KEY);
+          if (raw != null && /^\d+$/.test(raw) && Number(raw) < MANAGERS.length) teamPickChoice = Number(raw);
+        } catch (e) { /* no stored choice */ }
+
+        teamPicker = document.createElement("select");
+        teamPicker.setAttribute("aria-label", "Manager squad");
+        for (const m of MANAGERS) {
+          const o = document.createElement("option");
+          o.value = String(m.id);
+          teamPickerOpts.push(o);
+          teamPicker.appendChild(o);
+        }
+        teamPicker.addEventListener("change", () => {
+          teamPickChoice = Number(teamPicker.value);
+          try { localStorage.setItem(TEAM_PICK_KEY, String(teamPickChoice)); } catch (e) { /* best effort */ }
+          syncTeamPicker();
+        });
+        const pickerWrap = document.createElement("div");
+        pickerWrap.className = "team-picker";
+        pickerWrap.appendChild(teamPicker);
+        teamsView.prepend(pickerWrap);
+      }
+
+      function teamPickId() {
+        if (teamPickChoice != null) return teamPickChoice;
+        const seat = LIVE.enabled ? LIVE.mySeat() : null;
+        const mi = seat ? Number(seat.manager) : NaN;
+        return Number.isInteger(mi) && mi >= 0 && mi < MANAGERS.length ? mi : 0;
+      }
+
+      // Compare-before-assign: this runs on every state change, and a native
+      // select picker that is open on a phone should not be poked needlessly.
+      function syncTeamPicker() {
+        if (!teamPicker) return;
+        MANAGERS.forEach((m, i) => {
+          const w = walletOf(m);
+          const text = `${m.name} · ${w.spent} spent · ${w.slots}/${CONFIG.squadSize} slots`;
+          if (teamPickerOpts[i].textContent !== text) teamPickerOpts[i].textContent = text;
+        });
+        const id = teamPickId();
+        if (teamPicker.value !== String(id)) teamPicker.value = String(id);
+        teamCols.forEach(t => t.col.classList.toggle("team-sel", t.m.id === id));
+      }
+
       function renderTeams() {
+        syncTeamPicker();
         teamCols.forEach(({ m, summary, posGroups, statsRow, clubBadges }) => {
           const w = walletOf(m);
           const squad = ALL.filter(p => p.status === "sold" && p.owner === m.id);
@@ -7425,6 +7750,7 @@
 
       function renderSeats() {
         const box = document.createElement("div");
+        syncTeamPicker();      // an unpicked squad follows the seat this device holds
         // Sitting down, being released, or another device taking the seat this
         // one wanted all arrive here — and all of them change whether this
         // browser may raise, so the bid row is repainted on the same event.
